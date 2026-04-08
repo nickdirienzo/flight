@@ -8,9 +8,11 @@ struct SettingsView: View {
     @State private var showingImport = false
     @State private var themeNames: [String] = []
 
+    @State private var selectedProjectID: String?
     @State private var provision: String = ""
     @State private var connect: String = ""
     @State private var teardown: String = ""
+    @State private var list: String = ""
 
     var body: some View {
         TabView {
@@ -20,15 +22,9 @@ struct SettingsView: View {
             remoteTab
                 .tabItem { Label("Remote", systemImage: "cloud") }
         }
-        .frame(width: 500, height: 380)
+        .frame(width: 500, height: 420)
         .onAppear {
             themeNames = ThemeManager.shared.availableThemeNames()
-            state.reloadConfig()
-            if let remote = state.remoteMode {
-                provision = remote.provision
-                connect = remote.connect
-                teardown = remote.teardown
-            }
         }
     }
 
@@ -85,8 +81,36 @@ struct SettingsView: View {
         .padding()
     }
 
+    private var selectedRemoteProject: Project? {
+        guard let id = selectedProjectID else { return state.projects.first }
+        return state.projects.first { $0.id == id }
+    }
+
+    private func loadRemoteFields() {
+        if let remote = selectedRemoteProject?.remoteMode {
+            provision = remote.provision
+            connect = remote.connect
+            teardown = remote.teardown
+            list = remote.list ?? ""
+        } else {
+            provision = ""
+            connect = ""
+            teardown = ""
+            list = ""
+        }
+    }
+
     private var remoteTab: some View {
         Form {
+            Picker("Project", selection: $selectedProjectID) {
+                ForEach(state.projects) { project in
+                    Text(project.name).tag(Optional(project.id))
+                }
+            }
+            .onChange(of: selectedProjectID) { _, _ in
+                loadRemoteFields()
+            }
+
             Section {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Provision")
@@ -115,31 +139,43 @@ struct SettingsView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 4))
                         .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.secondary.opacity(0.3)))
                 }
-            } header: {
-                Text("Remote Mode")
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("List (optional)")
+                        .font(.system(size: 12, weight: .medium))
+                    TextEditor(text: $list)
+                        .font(.system(size: 12, design: .monospaced))
+                        .frame(height: 40)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.secondary.opacity(0.3)))
+                }
             } footer: {
-                Text("Use {branch} and {workspace} as placeholders. Provision must print the workspace name to stdout.")
+                Text("Use {branch} and {workspace} as placeholders. Provision prints workspace name to stdout. List prints one name per line.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
             HStack {
                 Spacer()
-                if state.hasRemoteMode {
+                if selectedRemoteProject?.hasRemoteMode == true {
                     Button("Remove") {
-                        state.updateRemoteMode(nil)
+                        if let project = selectedRemoteProject {
+                            state.updateRemoteMode(nil, for: project)
+                        }
                         provision = ""
                         connect = ""
                         teardown = ""
+                        list = ""
                     }
                 }
                 Button("Save") {
-                    guard !provision.isEmpty, !connect.isEmpty, !teardown.isEmpty else { return }
+                    guard !provision.isEmpty, !connect.isEmpty, !teardown.isEmpty,
+                          let project = selectedRemoteProject else { return }
                     state.updateRemoteMode(RemoteModeConfig(
                         provision: provision,
                         connect: connect,
-                        teardown: teardown
-                    ))
+                        teardown: teardown,
+                        list: list.isEmpty ? nil : list
+                    ), for: project)
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(provision.isEmpty || connect.isEmpty || teardown.isEmpty)
@@ -148,12 +184,9 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .padding()
         .onAppear {
-            // Reload in case config was edited externally
-            if let remote = state.remoteMode {
-                provision = remote.provision
-                connect = remote.connect
-                teardown = remote.teardown
-            }
+            selectedProjectID = state.projects.first?.id
+            state.reloadConfig()
+            loadRemoteFields()
         }
     }
 }

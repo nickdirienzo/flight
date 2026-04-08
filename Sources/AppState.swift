@@ -4,8 +4,8 @@ import SwiftUI
 @Observable
 final class AppState {
     var projects: [Project] = []
-    var selectedProjectID: UUID?
-    var selectedWorktreeID: UUID?
+    var selectedProjectID: String?
+    var selectedWorktreeID: String?
 
     // Dialogs
     var showingAddRepo = false
@@ -14,11 +14,8 @@ final class AppState {
     var errorMessage: String?
     var showingError = false
 
-    // Config
-    private(set) var remoteMode: RemoteModeConfig?
-
     private var ciPollingTimer: Timer?
-    private var provisioningTasks: [UUID: Task<Void, Never>] = [:]
+    private var provisioningTasks: [String: Task<Void, Never>] = [:]
 
     var selectedProject: Project? {
         projects.first { $0.id == selectedProjectID }
@@ -41,7 +38,6 @@ final class AppState {
         ConfigService.ensureDirectories()
         let config = ConfigService.load()
         self.projects = config.projects.map { $0.toProject() }
-        self.remoteMode = config.remoteMode
 
         // Remove stale remote worktrees that never finished provisioning
         // (remote worktrees with no workspace name were mid-provision when the app quit)
@@ -62,7 +58,7 @@ final class AppState {
     }
 
     var hasRemoteMode: Bool {
-        remoteMode != nil
+        (selectedProject ?? projects.first)?.hasRemoteMode ?? false
     }
 
     // MARK: - Project Management
@@ -77,11 +73,16 @@ final class AppState {
 
     func reloadConfig() {
         let config = ConfigService.load()
-        self.remoteMode = config.remoteMode
+        // Reload remote mode configs per project
+        for projectConfig in config.projects {
+            if let project = projects.first(where: { $0.name == projectConfig.name }) {
+                project.remoteMode = projectConfig.remoteMode
+            }
+        }
     }
 
-    func updateRemoteMode(_ config: RemoteModeConfig?) {
-        remoteMode = config
+    func updateRemoteMode(_ config: RemoteModeConfig?, for project: Project) {
+        project.remoteMode = config
         saveConfig()
     }
 
@@ -140,21 +141,19 @@ final class AppState {
     }
 
     func listRunningWorkspaces() async -> [String] {
-        guard let output = try? await ShellService.run("coder list --output json") else { return [] }
-        guard let data = output.data(using: .utf8),
-              let workspaces = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return [] }
-        return workspaces.compactMap { ws -> String? in
-            guard let name = ws["name"] as? String,
-                  let status = ws["status"] as? String,
-                  status == "Running" else { return nil }
-            return name
+        guard let project = selectedProject ?? projects.first,
+              let listCmd = project.remoteMode?.list else { return [] }
+        guard let output = try? await ShellService.run(listCmd) else { return [] }
+        return output.components(separatedBy: "\n").compactMap { line -> String? in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            return trimmed.isEmpty ? nil : trimmed
         }
     }
 
     func attachToWorkspace(workspaceName: String, initialPrompt: String) {
         guard let project = selectedProject ?? projects.first else { return }
-        guard let remote = remoteMode else {
-            showError("Remote mode not configured.")
+        guard let remote = project.remoteMode else {
+            showError("Remote mode not configured for this project.")
             return
         }
 
@@ -184,8 +183,8 @@ final class AppState {
 
     func createRemoteWorktree(initialPrompt: String) {
         guard let project = selectedProject ?? projects.first else { return }
-        guard let remote = remoteMode else {
-            showError("Remote mode not configured. Add remoteMode to ~/flight/config.json")
+        guard let remote = project.remoteMode else {
+            showError("Remote mode not configured for this project.")
             return
         }
 
@@ -256,7 +255,7 @@ final class AppState {
             conversation.agent?.stop()
         }
 
-        if worktree.isRemote, let workspaceName = worktree.workspaceName, let remote = remoteMode {
+        if worktree.isRemote, let workspaceName = worktree.workspaceName, let remote = project.remoteMode {
             // Only teardown if no other worktrees use this workspace
             let othersOnSameWorkspace = allWorktrees.contains {
                 $0.id != worktree.id && $0.workspaceName == workspaceName
@@ -328,7 +327,7 @@ final class AppState {
         var prefix = commandPrefix ?? []
         if prefix.isEmpty, worktree.isRemote,
            let workspaceName = worktree.workspaceName,
-           let remote = remoteMode {
+           let remote = projectForWorktree(worktree)?.remoteMode {
             let connectCmd = remote.connect.replacingOccurrences(of: "{workspace}", with: workspaceName)
             prefix = connectCmd.components(separatedBy: " ")
         }
@@ -489,8 +488,7 @@ final class AppState {
 
     private func saveConfig() {
         let config = FlightConfig(
-            projects: projects.map { ProjectConfig(from: $0) },
-            remoteMode: remoteMode
+            projects: projects.map { ProjectConfig(from: $0) }
         )
         ConfigService.save(config)
     }
