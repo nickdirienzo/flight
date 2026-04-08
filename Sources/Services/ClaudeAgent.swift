@@ -142,9 +142,10 @@ final class ClaudeAgent {
             // Format: claude -p "$(cat /tmp/...)" --flags...
             let b64 = Data(message.utf8).base64EncodedString()
             let flags = claudeArgs.dropFirst(2).joined(separator: " ") // drop "claude" and "-p"
-            let remoteCmd = "echo \(b64) | base64 -d > /tmp/flight-prompt.txt && claude -p \\\"$(cat /tmp/flight-prompt.txt)\\\" \(flags)"
+            let remoteCmd = "echo \(b64) | base64 -d > /tmp/flight-prompt.txt && claude -p \\\"\\$(cat /tmp/flight-prompt.txt)\\\" \(flags)"
             let sshCmd = commandPrefix.joined(separator: " ") + " \"\(remoteCmd)\""
 
+            log("=== REMOTE CMD: \(sshCmd) ===")
             proc.executableURL = URL(fileURLWithPath: "/bin/zsh")
             proc.arguments = ["-l", "-c", sshCmd]
         } else {
