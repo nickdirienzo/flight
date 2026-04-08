@@ -77,13 +77,13 @@ enum ConfigService {
             .appendingPathComponent("chat")
     }
 
-    static func chatFileURL(worktreeID: UUID) -> URL {
+    static func chatFileURL(conversationID: UUID) -> URL {
         try? FileManager.default.createDirectory(at: chatBaseURL, withIntermediateDirectories: true)
-        return chatBaseURL.appendingPathComponent("\(worktreeID.uuidString).json")
+        return chatBaseURL.appendingPathComponent("\(conversationID.uuidString).json")
     }
 
-    static func loadMessages(worktreeID: UUID) -> [AgentMessage] {
-        let url = chatFileURL(worktreeID: worktreeID)
+    static func loadMessages(conversationID: UUID) -> [AgentMessage] {
+        let url = chatFileURL(conversationID: conversationID)
         guard let data = try? Data(contentsOf: url),
               let messages = try? JSONDecoder().decode([AgentMessage].self, from: data) else {
             return []
@@ -91,15 +91,21 @@ enum ConfigService {
         return messages
     }
 
-    static func saveMessages(_ messages: [AgentMessage], worktreeID: UUID) {
-        let url = chatFileURL(worktreeID: worktreeID)
+    static func saveMessages(_ messages: [AgentMessage], conversationID: UUID) {
+        let url = chatFileURL(conversationID: conversationID)
         let encoder = JSONEncoder()
         guard let data = try? encoder.encode(messages) else { return }
         try? data.write(to: url, options: .atomic)
     }
 
-    static func deleteChatHistory(worktreeID: UUID) {
-        let url = chatFileURL(worktreeID: worktreeID)
+    static func deleteChatHistory(conversationID: UUID) {
+        let url = chatFileURL(conversationID: conversationID)
         try? FileManager.default.removeItem(at: url)
+    }
+
+    static func deleteAllChatHistory(for worktree: Worktree) {
+        for conversation in worktree.conversations {
+            deleteChatHistory(conversationID: conversation.id)
+        }
     }
 }

@@ -14,16 +14,28 @@ final class Worktree: Identifiable {
     var branch: String
     var path: String
     var status: WorktreeStatus
-    var messages: [AgentMessage]
+    var conversations: [Conversation]
+    var activeConversationID: UUID?
     var prNumber: Int?
-    var sessionID: String?
     var ciStatus: CIStatus?
-    var agentBusy: Bool = false
-    var agent: ClaudeAgent?
 
     // Remote mode
     var isRemote: Bool
     var workspaceName: String?
+
+    var activeConversation: Conversation? {
+        conversations.first { $0.id == activeConversationID }
+    }
+
+    /// Whether any conversation in this worktree has a busy agent
+    var anyAgentBusy: Bool {
+        conversations.contains { $0.agentBusy }
+    }
+
+    /// Whether any conversation has a running agent
+    var anyAgentRunning: Bool {
+        conversations.contains { $0.agent?.isRunning == true }
+    }
 
     init(
         id: UUID = UUID(),
@@ -31,7 +43,6 @@ final class Worktree: Identifiable {
         path: String,
         status: WorktreeStatus = .idle,
         prNumber: Int? = nil,
-        sessionID: String? = nil,
         isRemote: Bool = false,
         workspaceName: String? = nil
     ) {
@@ -39,11 +50,24 @@ final class Worktree: Identifiable {
         self.branch = branch
         self.path = path
         self.status = status
-        self.messages = []
+        self.conversations = []
         self.prNumber = prNumber
-        self.sessionID = sessionID
         self.isRemote = isRemote
         self.workspaceName = workspaceName
+    }
+
+    /// Ensure at least one conversation exists, creating a default if needed
+    @discardableResult
+    func ensureConversation() -> Conversation {
+        if let active = activeConversation { return active }
+        if let first = conversations.first {
+            activeConversationID = first.id
+            return first
+        }
+        let conv = Conversation()
+        conversations.append(conv)
+        activeConversationID = conv.id
+        return conv
     }
 }
 
@@ -52,27 +76,46 @@ struct WorktreeConfig: Codable {
     let branch: String
     let path: String
     var prNumber: Int?
-    var sessionID: String?
     var isRemote: Bool?
     var workspaceName: String?
+    var conversations: [ConversationConfig]?
+    var activeConversationID: UUID?
+
+    // Legacy field for migration
+    var sessionID: String?
 
     init(from worktree: Worktree) {
         self.id = worktree.id
         self.branch = worktree.branch
         self.path = worktree.path
         self.prNumber = worktree.prNumber
-        self.sessionID = worktree.sessionID
         self.isRemote = worktree.isRemote
         self.workspaceName = worktree.workspaceName
+        self.conversations = worktree.conversations.map { ConversationConfig(from: $0) }
+        self.activeConversationID = worktree.activeConversationID
+        self.sessionID = nil
     }
 
     func toWorktree() -> Worktree {
         let wt = Worktree(
             id: id, branch: branch, path: path,
-            prNumber: prNumber, sessionID: sessionID,
+            prNumber: prNumber,
             isRemote: isRemote ?? false, workspaceName: workspaceName
         )
-        wt.messages = ConfigService.loadMessages(worktreeID: id)
+
+        if let convConfigs = conversations, !convConfigs.isEmpty {
+            wt.conversations = convConfigs.map { $0.toConversation() }
+            wt.activeConversationID = activeConversationID ?? wt.conversations.first?.id
+        } else if let legacySessionID = sessionID {
+            // Migrate old single-session worktree to a conversation
+            let conv = Conversation(name: "Chat", sessionID: legacySessionID)
+            conv.messages = ConfigService.loadMessages(conversationID: id) // try legacy ID
+            wt.conversations = [conv]
+            wt.activeConversationID = conv.id
+        } else {
+            // No conversations yet — will be created on demand
+        }
+
         return wt
     }
 }

@@ -41,6 +41,15 @@ struct FlightApp: App {
                 }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
                 .disabled(state.projects.isEmpty || !state.hasRemoteMode)
+
+                // Cmd+T — New tab in current worktree
+                Button("New Tab") {
+                    if let wt = state.selectedWorktree {
+                        state.addConversation(to: wt)
+                    }
+                }
+                .keyboardShortcut("t", modifiers: .command)
+                .disabled(state.selectedWorktree == nil)
             }
 
             // Custom commands
@@ -58,8 +67,8 @@ struct FlightApp: App {
 
                 // Cmd+Enter — Restart agent
                 Button("Restart Agent") {
-                    if let wt = state.selectedWorktree {
-                        state.restartAgent(for: wt)
+                    if let wt = state.selectedWorktree, let conv = wt.activeConversation {
+                        state.restartAgent(for: wt, conversation: conv)
                     }
                 }
                 .keyboardShortcut(.return, modifiers: .command)
@@ -67,8 +76,8 @@ struct FlightApp: App {
 
                 // Cmd+. — Kill agent
                 Button("Stop Agent") {
-                    if let wt = state.selectedWorktree {
-                        state.stopAgent(for: wt)
+                    if let wt = state.selectedWorktree, let conv = wt.activeConversation {
+                        state.stopAgent(for: conv, in: wt)
                     }
                 }
                 .keyboardShortcut(".", modifiers: .command)
@@ -76,8 +85,8 @@ struct FlightApp: App {
 
                 // Cmd+K — Clear chat
                 Button("Clear Chat") {
-                    if let wt = state.selectedWorktree {
-                        state.clearChat(for: wt)
+                    if let wt = state.selectedWorktree, let conv = wt.activeConversation {
+                        state.clearChat(for: conv)
                     }
                 }
                 .keyboardShortcut("k", modifiers: .command)

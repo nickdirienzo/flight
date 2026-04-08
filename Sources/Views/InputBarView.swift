@@ -9,8 +9,12 @@ struct InputBarView: View {
     @State private var planMode = false
     @FocusState private var isFocused: Bool
 
+    private var conversation: Conversation? {
+        worktree.activeConversation
+    }
+
     private var isAgentBusy: Bool {
-        worktree.agentBusy
+        conversation?.agentBusy ?? false
     }
 
     var body: some View {
@@ -40,9 +44,9 @@ struct InputBarView: View {
 
                 Spacer()
 
-                if isAgentBusy {
+                if isAgentBusy, let conversation {
                     Button {
-                        state.interruptAgent(for: worktree)
+                        state.interruptAgent(for: conversation, in: worktree)
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "stop.fill")
@@ -85,8 +89,8 @@ struct InputBarView: View {
                         return .handled
                     }
                     .onKeyPress(.escape) {
-                        if isAgentBusy {
-                            state.interruptAgent(for: worktree)
+                        if isAgentBusy, let conversation {
+                            state.interruptAgent(for: conversation, in: worktree)
                             return .handled
                         }
                         return .ignored
@@ -112,12 +116,13 @@ struct InputBarView: View {
     private func sendMessage() {
         let text = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
+        guard let conversation else { return }
         messageText = ""
 
         if planMode {
-            state.sendMessage("/plan \(text)", to: worktree)
+            state.sendMessage("/plan \(text)", to: worktree, conversation: conversation)
         } else {
-            state.sendMessage(text, to: worktree)
+            state.sendMessage(text, to: worktree, conversation: conversation)
         }
     }
 }
