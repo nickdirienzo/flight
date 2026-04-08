@@ -9,8 +9,13 @@ final class AppState {
 
     // Dialogs
     var showingAddRepo = false
+    var showingRemotePrompt = false
+    var remoteInitialPrompt = ""
     var errorMessage: String?
     var showingError = false
+
+    // Config
+    private(set) var remoteMode: RemoteModeConfig?
 
     private var ciPollingTimer: Timer?
 
@@ -35,7 +40,12 @@ final class AppState {
         ConfigService.ensureDirectories()
         let config = ConfigService.load()
         self.projects = config.projects.map { $0.toProject() }
+        self.remoteMode = config.remoteMode
         startCIPolling()
+    }
+
+    var hasRemoteMode: Bool {
+        remoteMode != nil
     }
 
     // MARK: - Project Management
@@ -45,6 +55,11 @@ final class AppState {
         let project = Project(path: path)
         projects.append(project)
         selectedProjectID = project.id
+        saveConfig()
+    }
+
+    func updateRemoteMode(_ config: RemoteModeConfig?) {
+        remoteMode = config
         saveConfig()
     }
 
@@ -99,20 +114,72 @@ final class AppState {
         await createWorktree(branch: "flight/\(adj)-\(noun)-\(suffix)")
     }
 
+    func createRemoteWorktree(initialPrompt: String) async {
+        guard let project = selectedProject ?? projects.first else { return }
+        guard let remote = remoteMode else {
+            showError("Remote mode not configured. Add remoteMode to ~/flight/config.json")
+            return
+        }
+
+        let adjectives = ["swift", "bold", "calm", "dark", "keen", "warm", "cool", "fast", "wild", "soft"]
+        let nouns = ["fox", "oak", "elm", "owl", "jay", "bee", "ant", "ray", "fin", "gem"]
+        let adj = adjectives.randomElement()!
+        let noun = nouns.randomElement()!
+        let suffix = String(UUID().uuidString.prefix(4)).lowercased()
+        let branch = "flight/\(adj)-\(noun)-\(suffix)"
+
+        // Optimistic: show immediately
+        let worktree = Worktree(branch: branch, path: "", status: .creating, isRemote: true)
+        project.worktrees.append(worktree)
+        selectedWorktreeID = worktree.id
+
+        // Add a system message showing provisioning
+        let provMsg = AgentMessage(role: .system, content: .text("Provisioning remote workspace..."))
+        worktree.messages.append(provMsg)
+
+        do {
+            // 1. Provision: run the provision command, capture workspace name
+            let provisionCmd = remote.provision.replacingOccurrences(of: "{branch}", with: branch)
+            let workspaceName = try await ShellService.run(provisionCmd, in: project.path)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+
+            worktree.workspaceName = workspaceName
+            worktree.path = workspaceName // use workspace name as identifier
+
+            // 2. Build connect prefix
+            let connectCmd = remote.connect.replacingOccurrences(of: "{workspace}", with: workspaceName)
+            let connectPrefix = connectCmd.components(separatedBy: " ")
+
+            saveConfig()
+
+            // 3. Start agent with connect prefix and send initial prompt
+            try startAgent(for: worktree, commandPrefix: connectPrefix)
+            worktree.agent?.send(message: initialPrompt)
+        } catch {
+            project.worktrees.removeAll { $0.id == worktree.id }
+            showError("Remote provisioning failed: \(error.localizedDescription)")
+        }
+    }
+
     func removeWorktree(_ worktree: Worktree) async {
         guard let project = projectForWorktree(worktree) else { return }
 
         worktree.agent?.stop()
 
-        do {
-            try await GitService.removeWorktree(
-                repoPath: project.path,
-                worktreePath: worktree.path,
-                branch: worktree.branch
-            )
-        } catch {
-            // Still remove from UI even if git cleanup fails
-            showError(error.localizedDescription)
+        if worktree.isRemote, let workspaceName = worktree.workspaceName, let remote = remoteMode {
+            // Run teardown command
+            let teardownCmd = remote.teardown.replacingOccurrences(of: "{workspace}", with: workspaceName)
+            _ = try? await ShellService.run(teardownCmd)
+        } else {
+            do {
+                try await GitService.removeWorktree(
+                    repoPath: project.path,
+                    worktreePath: worktree.path,
+                    branch: worktree.branch
+                )
+            } catch {
+                showError(error.localizedDescription)
+            }
         }
 
         ConfigService.deleteChatHistory(worktreeID: worktree.id)
@@ -125,12 +192,21 @@ final class AppState {
 
     // MARK: - Agent Management
 
-    func startAgent(for worktree: Worktree) throws {
+    func startAgent(for worktree: Worktree, commandPrefix: [String]? = nil) throws {
         worktree.agent?.stop()
 
         let project = projectForWorktree(worktree)
         let logFile = project.map {
             ConfigService.logFileURL(repoName: $0.name, branch: worktree.branch)
+        }
+
+        // Build connect prefix for remote worktrees
+        var prefix = commandPrefix ?? []
+        if prefix.isEmpty, worktree.isRemote,
+           let workspaceName = worktree.workspaceName,
+           let remote = remoteMode {
+            let connectCmd = remote.connect.replacingOccurrences(of: "{workspace}", with: workspaceName)
+            prefix = connectCmd.components(separatedBy: " ")
         }
 
         let agent = ClaudeAgent()
@@ -147,7 +223,12 @@ final class AppState {
             worktree?.agentBusy = busy
         }
 
-        try agent.start(in: worktree.path, resumeSessionID: worktree.sessionID, logFile: logFile)
+        try agent.start(
+            in: worktree.path,
+            resumeSessionID: worktree.sessionID,
+            logFile: logFile,
+            commandPrefix: prefix
+        )
         worktree.agent = agent
         worktree.status = .running
     }
@@ -271,7 +352,10 @@ final class AppState {
     }
 
     private func saveConfig() {
-        let config = FlightConfig(projects: projects.map { ProjectConfig(from: $0) })
+        let config = FlightConfig(
+            projects: projects.map { ProjectConfig(from: $0) },
+            remoteMode: remoteMode
+        )
         ConfigService.save(config)
     }
 

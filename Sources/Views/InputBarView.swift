@@ -3,6 +3,8 @@ import SwiftUI
 struct InputBarView: View {
     @Bindable var state: AppState
     let worktree: Worktree
+    @AppStorage("flightFontSize") private var fontSize: Double = 14
+    @Environment(\.theme) private var theme
     @State private var messageText = ""
     @State private var planMode = false
     @FocusState private var isFocused: Bool
@@ -64,7 +66,7 @@ struct InputBarView: View {
             // Input row
             HStack(spacing: 8) {
                 TextEditor(text: $messageText)
-                    .font(.system(size: 14))
+                    .font(.system(size: fontSize))
                     .frame(minHeight: 20, maxHeight: 100)
                     .fixedSize(horizontal: false, vertical: true)
                     .focused($isFocused)
@@ -93,6 +95,7 @@ struct InputBarView: View {
             .padding(.horizontal, 12)
             .padding(.bottom, 8)
         }
+        .background(theme.headerBackground)
         .onAppear { isFocused = true }
     }
 

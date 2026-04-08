@@ -44,6 +44,7 @@ enum ChatSection: Identifiable {
 struct ChatView: View {
     @Bindable var state: AppState
     let worktree: Worktree
+    @Environment(\.theme) private var theme
 
     private var isThinking: Bool {
         worktree.agentBusy
@@ -56,6 +57,7 @@ struct ChatView: View {
     var body: some View {
         VStack(spacing: 0) {
             chatHeader
+                .background(theme.headerBackground)
 
             Divider()
 
@@ -108,6 +110,7 @@ struct ChatView: View {
 
             InputBarView(state: state, worktree: worktree)
         }
+        .background(theme.background)
     }
 
     private func scrollToBottom(proxy: ScrollViewProxy) {
@@ -186,6 +189,7 @@ struct ChatView: View {
 struct ToolGroupView: View {
     let tools: [AgentMessage]
     var isActive: Bool = false
+    @Environment(\.theme) private var theme
     @State private var isExpanded = false
 
     private var toolNames: String {
@@ -213,7 +217,7 @@ struct ToolGroupView: View {
                 HStack(spacing: 6) {
                     Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                         .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(theme.secondaryText)
                         .frame(width: 12)
 
                     if isActive {
@@ -227,11 +231,11 @@ struct ToolGroupView: View {
 
                     Text("\(toolUseCount) tool \(toolUseCount == 1 ? "call" : "calls")")
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(theme.text)
 
                     Text(toolNames)
                         .font(.system(size: 11))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(theme.secondaryText)
                         .lineLimit(1)
 
                     Spacer()
@@ -251,10 +255,10 @@ struct ToolGroupView: View {
                 .padding(.bottom, 8)
             }
         }
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
+        .background(theme.toolGroupBackground)
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(Color(nsColor: .separatorColor).opacity(0.5), lineWidth: 1)
+                .stroke(theme.border.opacity(0.5), lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
@@ -344,6 +348,7 @@ struct PermissionRequestView: View {
 // MARK: - Thinking
 
 struct ThinkingIndicator: View {
+    @Environment(\.theme) private var theme
     @State private var dotCount = 0
 
     private let timer = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
@@ -354,14 +359,14 @@ struct ThinkingIndicator: View {
                 .controlSize(.small)
             Text("Thinking" + String(repeating: ".", count: dotCount + 1))
                 .font(.system(size: 13))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(theme.secondaryText)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .background(Color(nsColor: .controlBackgroundColor))
+        .background(theme.assistantBubble)
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+                .stroke(theme.border, lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .onReceive(timer) { _ in
