@@ -2,7 +2,7 @@
 
 A Mac-native GUI for orchestrating parallel Claude Code agents across local git worktrees and remote workspaces.
 
-Evolved from [inc](https://github.com/nickdirienzo/inc), an earlier experiment in software factory patterns. Flight focuses on being a practical daily driver for parallel agentic coding — locally and in the cloud.
+Inspired by [Conductor](https://conductor.build) and evolved from [inc](https://github.com/nickdirienzo/inc), an earlier experiment in software factory patterns. Flight focuses on being a practical daily driver for parallel agentic coding with native support for remote workspaces.
 
 ![Remote provisioning](doc/images/remote-provisioning.png)
 
