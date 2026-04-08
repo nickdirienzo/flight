@@ -157,8 +157,12 @@ final class AppState {
             return
         }
 
+        // Generate a unique branch name for this session on the workspace
+        let suffix = String(UUID().uuidString.prefix(4)).lowercased()
+        let branch = "\(workspaceName)/\(suffix)"
+
         let worktree = Worktree(
-            branch: workspaceName, path: workspaceName,
+            branch: branch, path: workspaceName,
             status: .idle, isRemote: true, workspaceName: workspaceName
         )
         let conversation = worktree.ensureConversation()
