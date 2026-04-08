@@ -2,6 +2,8 @@ import SwiftUI
 
 struct MessageView: View {
     let message: AgentMessage
+    @AppStorage("flightFontSize") private var fontSize: Double = 14
+    @Environment(\.theme) private var theme
 
     private var isUserMessage: Bool {
         message.role == .user
@@ -12,21 +14,15 @@ struct MessageView: View {
             if isUserMessage { Spacer(minLength: 80) }
 
             Text(message.textContent)
-                .font(.system(size: 14))
+                .font(.system(size: fontSize))
+                .foregroundStyle(theme.text)
                 .textSelection(.enabled)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
-                .background(
-                    isUserMessage
-                        ? Color.accentColor.opacity(0.12)
-                        : Color(nsColor: .controlBackgroundColor)
-                )
+                .background(isUserMessage ? theme.userBubble : theme.assistantBubble)
                 .overlay(
                     RoundedRectangle(cornerRadius: 12)
-                        .stroke(
-                            isUserMessage ? Color.clear : Color(nsColor: .separatorColor),
-                            lineWidth: 1
-                        )
+                        .stroke(isUserMessage ? Color.clear : theme.border, lineWidth: 1)
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 12))
 
@@ -37,6 +33,7 @@ struct MessageView: View {
 
 struct ToolCallRow: View {
     let message: AgentMessage
+    @Environment(\.theme) private var theme
     @State private var isExpanded = false
 
     var body: some View {
@@ -49,7 +46,7 @@ struct ToolCallRow: View {
                 HStack(spacing: 6) {
                     Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                         .font(.system(size: 8, weight: .bold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(theme.secondaryText)
                         .frame(width: 10)
 
                     if message.isToolUse {
@@ -60,18 +57,18 @@ struct ToolCallRow: View {
                             if let desc = message.toolDescription {
                                 Text(desc)
                                     .font(.system(size: 11))
-                                    .foregroundStyle(.tertiary)
+                                    .foregroundStyle(theme.secondaryText)
                                     .lineLimit(1)
                             }
                         }
                     } else {
                         Text("Result")
                             .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(theme.secondaryText)
                         if !isExpanded {
                             Text(resultPreview)
                                 .font(.system(size: 11))
-                                .foregroundStyle(.tertiary)
+                                .foregroundStyle(theme.secondaryText.opacity(0.6))
                                 .lineLimit(1)
                         }
                     }
@@ -87,13 +84,13 @@ struct ToolCallRow: View {
                 Text(message.textContent)
                     .font(.system(size: 11, design: .monospaced))
                     .textSelection(.enabled)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(theme.secondaryText)
                     .padding(.horizontal, 8)
                     .padding(.bottom, 6)
                     .padding(.leading, 16)
             }
         }
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.3))
+        .background(theme.toolGroupBackground.opacity(0.3))
         .clipShape(RoundedRectangle(cornerRadius: 6))
     }
 

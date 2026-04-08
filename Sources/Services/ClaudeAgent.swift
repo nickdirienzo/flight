@@ -10,6 +10,7 @@ final class ClaudeAgent {
     private var directory: String = ""
     private var logFile: URL?
     private var pendingMessages: [String] = []
+    private var commandPrefix: [String] = [] // e.g. ["coder", "ssh", "workspace", "--"]
 
     private(set) var isRunning = false
     private(set) var isBusy = false
@@ -18,10 +19,16 @@ final class ClaudeAgent {
     var onSessionID: ((String) -> Void)?
     var onBusyChanged: ((Bool) -> Void)?
 
-    func start(in directory: String, resumeSessionID: String? = nil, logFile: URL? = nil) throws {
+    func start(
+        in directory: String,
+        resumeSessionID: String? = nil,
+        logFile: URL? = nil,
+        commandPrefix: [String] = []
+    ) throws {
         self.directory = directory
         self.logFile = logFile
         self.sessionID = resumeSessionID
+        self.commandPrefix = commandPrefix
 
         if logHandle == nil, let logFile {
             FileManager.default.createFile(atPath: logFile.path, contents: nil)
@@ -109,7 +116,7 @@ final class ClaudeAgent {
         let stdout = Pipe()
         let stderr = Pipe()
 
-        var args = [
+        var claudeArgs = [
             "claude",
             "-p",
             "--output-format", "stream-json",
@@ -120,12 +127,19 @@ final class ClaudeAgent {
         ]
 
         if let sessionID {
-            args += ["--resume", sessionID]
+            claudeArgs += ["--resume", sessionID]
         }
 
+        // Remote mode: prefix with connect command (e.g. coder ssh workspace --)
+        let fullArgs = commandPrefix + claudeArgs
+
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        proc.arguments = args
-        proc.currentDirectoryURL = URL(fileURLWithPath: directory)
+        proc.arguments = fullArgs
+
+        // Only set cwd for local mode
+        if commandPrefix.isEmpty {
+            proc.currentDirectoryURL = URL(fileURLWithPath: directory)
+        }
         proc.standardInput = stdin
         proc.standardOutput = stdout
         proc.standardError = stderr

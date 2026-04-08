@@ -2,57 +2,61 @@ import SwiftUI
 
 struct SidebarView: View {
     @Bindable var state: AppState
+    @Environment(\.theme) private var theme
 
     var body: some View {
-        List(selection: $state.selectedWorktreeID) {
-            ForEach(state.projects) { project in
-                Section {
-                    ForEach(project.worktrees) { worktree in
-                        WorktreeRow(worktree: worktree)
-                            .tag(worktree.id)
-                            .contextMenu {
-                                worktreeContextMenu(worktree: worktree)
+        VStack(spacing: 0) {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 2) {
+                    ForEach(state.projects) { project in
+                        // Project header
+                        HStack {
+                            Image(systemName: "folder")
+                                .font(.system(size: 11))
+                            Text(project.name)
+                                .font(.system(size: 12, weight: .semibold))
+                            Spacer()
+                        }
+                        .foregroundStyle(theme.secondaryText)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .padding(.top, 4)
+                        .contextMenu {
+                            Button("Remove Project") {
+                                state.removeProject(project)
                             }
-                    }
-                } header: {
-                    HStack {
-                        Image(systemName: "folder")
-                        Text(project.name)
-                            .fontWeight(.semibold)
-                        Spacer()
-                    }
-                    .contextMenu {
-                        Button("Remove Project") {
-                            state.removeProject(project)
+                        }
+
+                        // Worktrees
+                        ForEach(project.worktrees) { worktree in
+                            WorktreeRow(worktree: worktree, isSelected: worktree.id == state.selectedWorktreeID)
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    state.selectedWorktreeID = worktree.id
+                                    state.selectedProjectID = project.id
+                                }
+                                .contextMenu {
+                                    worktreeContextMenu(worktree: worktree)
+                                }
                         }
                     }
                 }
+                .padding(.vertical, 4)
             }
-        }
-        .listStyle(.sidebar)
-        .safeAreaInset(edge: .bottom) {
-            VStack(spacing: 8) {
-                Button {
-                    state.showingAddRepo = true
-                } label: {
-                    Label("Add Repo", systemImage: "plus")
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 16)
-                .padding(.bottom, 8)
+
+            Divider()
+
+            Button {
+                state.showingAddRepo = true
+            } label: {
+                Label("Add Repo", systemImage: "plus")
+                    .font(.system(size: 12))
+                    .foregroundStyle(theme.text)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-        }
-        .onChange(of: state.selectedWorktreeID) { _, newID in
-            if let newID {
-                // Update selected project to match
-                for project in state.projects {
-                    if project.worktrees.contains(where: { $0.id == newID }) {
-                        state.selectedProjectID = project.id
-                        break
-                    }
-                }
-            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
         }
     }
 
@@ -84,10 +88,20 @@ struct SidebarView: View {
 
 struct WorktreeRow: View {
     let worktree: Worktree
+    var isSelected: Bool = false
+    @Environment(\.theme) private var theme
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
+            if worktree.isRemote {
+                Image(systemName: "cloud")
+                    .font(.system(size: 10))
+                    .foregroundStyle(theme.secondaryText)
+            }
+
             Text(worktree.branch)
+                .font(.system(size: 13))
+                .foregroundStyle(isSelected ? .white : theme.text)
                 .lineLimit(1)
 
             Spacer()
@@ -98,8 +112,16 @@ struct WorktreeRow: View {
 
             Text(statusLabel)
                 .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(statusColor)
+                .foregroundStyle(isSelected ? .white.opacity(0.7) : statusColor)
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 5)
+        .background(
+            isSelected
+                ? RoundedRectangle(cornerRadius: 6).fill(theme.accent)
+                : RoundedRectangle(cornerRadius: 6).fill(Color.clear)
+        )
+        .padding(.horizontal, 4)
     }
 
     private var statusLabel: String {
@@ -115,7 +137,7 @@ struct WorktreeRow: View {
         if worktree.agentBusy { return .orange }
         if worktree.agent?.isRunning == true { return .green }
         if worktree.status == .error { return .red }
-        return .secondary
+        return theme.secondaryText
     }
 }
 

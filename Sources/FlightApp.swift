@@ -15,9 +15,17 @@ struct FlightApp: App {
         }
     }
 
+    @State private var themeManager = ThemeManager.shared
+
     var body: some Scene {
         WindowGroup {
             ContentView(state: state)
+                .environment(\.theme, themeManager.currentColors)
+                .preferredColorScheme(themeManager.currentColorScheme)
+        }
+
+        Settings {
+            SettingsView(state: state)
         }
         .commands {
             // Cmd+N — New worktree (replaces default New Window)
@@ -27,6 +35,12 @@ struct FlightApp: App {
                 }
                 .keyboardShortcut("n", modifiers: .command)
                 .disabled(state.projects.isEmpty)
+
+                Button("New Remote Worktree...") {
+                    state.showingRemotePrompt = true
+                }
+                .keyboardShortcut("n", modifiers: [.command, .shift])
+                .disabled(state.projects.isEmpty || !state.hasRemoteMode)
             }
 
             // Custom commands
@@ -81,4 +95,5 @@ struct FlightApp: App {
             }
         }
     }
+
 }
