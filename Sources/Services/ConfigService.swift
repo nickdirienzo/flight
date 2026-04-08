@@ -1,16 +1,16 @@
 import Foundation
 
 struct RemoteModeConfig: Codable {
-    var provision: String  // e.g. "my-wrapper provision {branch}"
-    var connect: String    // e.g. "coder ssh {workspace} --"
-    var teardown: String   // e.g. "my-wrapper teardown {workspace}"
+    var provision: String   // e.g. "my-wrapper provision {branch}"
+    var connect: String     // e.g. "coder ssh {workspace} --"
+    var teardown: String    // e.g. "my-wrapper teardown {workspace}"
+    var list: String?       // e.g. "my-wrapper list" — prints one workspace name per line
 }
 
 struct FlightConfig: Codable {
     var projects: [ProjectConfig]
-    var remoteMode: RemoteModeConfig?
 
-    static let empty = FlightConfig(projects: [], remoteMode: nil)
+    static let empty = FlightConfig(projects: [])
 }
 
 enum ConfigService {
