@@ -67,17 +67,23 @@ struct SidebarView: View {
                 Task { await state.createPR(for: worktree) }
             }
         }
-        if worktree.agent?.isRunning == true {
-            Button("Stop Agent") {
-                state.stopAgent(for: worktree)
+        if let conv = worktree.activeConversation {
+            if conv.agent?.isRunning == true {
+                Button("Stop Agent") {
+                    state.stopAgent(for: conv, in: worktree)
+                }
+            } else {
+                Button("Start Agent") {
+                    try? state.startAgent(for: worktree, conversation: conv)
+                }
             }
-        } else {
-            Button("Start Agent") {
-                try? state.startAgent(for: worktree)
+            Button("Restart Agent") {
+                state.restartAgent(for: worktree, conversation: conv)
             }
         }
-        Button("Restart Agent") {
-            state.restartAgent(for: worktree)
+        Divider()
+        Button("New Tab") {
+            state.addConversation(to: worktree)
         }
         Divider()
         Button("Remove Worktree", role: .destructive) {
@@ -126,16 +132,16 @@ struct WorktreeRow: View {
 
     private var statusLabel: String {
         if worktree.status == .creating { return "creating" }
-        if worktree.agentBusy { return "working" }
-        if worktree.agent?.isRunning == true { return "ready" }
+        if worktree.anyAgentBusy { return "working" }
+        if worktree.anyAgentRunning { return "ready" }
         if worktree.status == .error { return "error" }
         return "idle"
     }
 
     private var statusColor: Color {
         if worktree.status == .creating { return theme.yellow }
-        if worktree.agentBusy { return theme.orange }
-        if worktree.agent?.isRunning == true { return theme.green }
+        if worktree.anyAgentBusy { return theme.orange }
+        if worktree.anyAgentRunning { return theme.green }
         if worktree.status == .error { return theme.red }
         return theme.secondaryText
     }

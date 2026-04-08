@@ -71,7 +71,9 @@ final class AppState {
     func removeProject(_ project: Project) {
         // Stop all agents in this project
         for worktree in project.worktrees {
-            worktree.agent?.stop()
+            for conversation in worktree.conversations {
+                conversation.agent?.stop()
+            }
         }
         projects.removeAll { $0.id == project.id }
         if selectedProjectID == project.id {
@@ -89,6 +91,7 @@ final class AppState {
 
         // Optimistic: show worktree immediately with "creating" status
         let worktree = Worktree(branch: branch, path: wtPath, status: .creating)
+        let conversation = worktree.ensureConversation()
         project.worktrees.append(worktree)
         selectedWorktreeID = worktree.id
 
@@ -102,7 +105,7 @@ final class AppState {
             saveConfig()
 
             // Auto-start agent
-            try startAgent(for: worktree)
+            try startAgent(for: worktree, conversation: conversation)
         } catch {
             // Remove the optimistic worktree on failure
             project.worktrees.removeAll { $0.id == worktree.id }
@@ -135,12 +138,13 @@ final class AppState {
 
         // Optimistic: show immediately
         let worktree = Worktree(branch: branch, path: "", status: .creating, isRemote: true)
+        let conversation = worktree.ensureConversation()
         project.worktrees.append(worktree)
         selectedWorktreeID = worktree.id
 
         // Add a system message showing provisioning
         let provMsg = AgentMessage(role: .system, content: .text("Provisioning remote workspace..."))
-        worktree.messages.append(provMsg)
+        conversation.messages.append(provMsg)
 
         do {
             // 1. Provision: run the provision command, capture workspace name
@@ -158,8 +162,8 @@ final class AppState {
             saveConfig()
 
             // 3. Start agent with connect prefix and send initial prompt
-            try startAgent(for: worktree, commandPrefix: connectPrefix)
-            worktree.agent?.send(message: initialPrompt)
+            try startAgent(for: worktree, conversation: conversation, commandPrefix: connectPrefix)
+            conversation.agent?.send(message: initialPrompt)
         } catch {
             project.worktrees.removeAll { $0.id == worktree.id }
             showError("Remote provisioning failed: \(error.localizedDescription)")
@@ -169,7 +173,9 @@ final class AppState {
     func removeWorktree(_ worktree: Worktree) async {
         guard let project = projectForWorktree(worktree) else { return }
 
-        worktree.agent?.stop()
+        for conversation in worktree.conversations {
+            conversation.agent?.stop()
+        }
 
         if worktree.isRemote, let workspaceName = worktree.workspaceName, let remote = remoteMode {
             // Run teardown command
@@ -187,7 +193,7 @@ final class AppState {
             }
         }
 
-        ConfigService.deleteChatHistory(worktreeID: worktree.id)
+        ConfigService.deleteAllChatHistory(for: worktree)
         project.worktrees.removeAll { $0.id == worktree.id }
         if selectedWorktreeID == worktree.id {
             selectedWorktreeID = project.worktrees.first?.id
@@ -195,10 +201,39 @@ final class AppState {
         saveConfig()
     }
 
+    // MARK: - Conversation Management
+
+    func addConversation(to worktree: Worktree) {
+        let count = worktree.conversations.count + 1
+        let conversation = Conversation(name: "Chat \(count)")
+        worktree.conversations.append(conversation)
+        worktree.activeConversationID = conversation.id
+        saveConfig()
+    }
+
+    func removeConversation(_ conversation: Conversation, from worktree: Worktree) {
+        conversation.agent?.stop()
+        ConfigService.deleteChatHistory(conversationID: conversation.id)
+        worktree.conversations.removeAll { $0.id == conversation.id }
+
+        // Select another conversation or create a new one
+        if worktree.activeConversationID == conversation.id {
+            worktree.activeConversationID = worktree.conversations.first?.id
+        }
+        if worktree.conversations.isEmpty {
+            worktree.ensureConversation()
+        }
+        saveConfig()
+    }
+
+    func selectConversation(_ conversation: Conversation, in worktree: Worktree) {
+        worktree.activeConversationID = conversation.id
+    }
+
     // MARK: - Agent Management
 
-    func startAgent(for worktree: Worktree, commandPrefix: [String]? = nil) throws {
-        worktree.agent?.stop()
+    func startAgent(for worktree: Worktree, conversation: Conversation, commandPrefix: [String]? = nil) throws {
+        conversation.agent?.stop()
 
         let project = projectForWorktree(worktree)
         let logFile = project.map {
@@ -215,68 +250,73 @@ final class AppState {
         }
 
         let agent = ClaudeAgent()
-        agent.onMessage = { [weak worktree] message in
-            guard let worktree else { return }
-            worktree.messages.append(message)
-            ConfigService.saveMessages(worktree.messages, worktreeID: worktree.id)
+        agent.onMessage = { [weak conversation] message in
+            guard let conversation else { return }
+            conversation.messages.append(message)
+            ConfigService.saveMessages(conversation.messages, conversationID: conversation.id)
         }
-        agent.onSessionID = { [weak self, weak worktree] sessionID in
-            worktree?.sessionID = sessionID
+        agent.onSessionID = { [weak self, weak conversation] sessionID in
+            conversation?.sessionID = sessionID
             self?.saveConfig()
         }
-        agent.onBusyChanged = { [weak worktree] busy in
-            worktree?.agentBusy = busy
+        agent.onBusyChanged = { [weak conversation] busy in
+            conversation?.agentBusy = busy
         }
 
         try agent.start(
             in: worktree.path,
-            resumeSessionID: worktree.sessionID,
+            resumeSessionID: conversation.sessionID,
             logFile: logFile,
             commandPrefix: prefix
         )
-        worktree.agent = agent
+        conversation.agent = agent
         worktree.status = .running
     }
 
-    func respondToPermission(worktree: Worktree, requestID: String, allow: Bool) {
-        worktree.agent?.respondToControlRequest(requestID: requestID, allow: allow)
+    func respondToPermission(conversation: Conversation, requestID: String, allow: Bool) {
+        conversation.agent?.respondToControlRequest(requestID: requestID, allow: allow)
     }
 
-    func interruptAgent(for worktree: Worktree) {
-        worktree.agent?.interrupt()
+    func interruptAgent(for conversation: Conversation, in worktree: Worktree) {
+        conversation.agent?.interrupt()
         let msg = AgentMessage(role: .system, content: .text("Interrupted"))
-        worktree.messages.append(msg)
-        ConfigService.saveMessages(worktree.messages, worktreeID: worktree.id)
+        conversation.messages.append(msg)
+        ConfigService.saveMessages(conversation.messages, conversationID: conversation.id)
     }
 
-    func stopAgent(for worktree: Worktree) {
-        worktree.agent?.stop()
-        worktree.agent = nil
-        worktree.status = .idle
+    func stopAgent(for conversation: Conversation, in worktree: Worktree) {
+        conversation.agent?.stop()
+        conversation.agent = nil
+        // Only set idle if no other conversations are running
+        if !worktree.anyAgentRunning {
+            worktree.status = .idle
+        }
     }
 
     func stopAllAgents() {
         for worktree in allWorktrees {
-            worktree.agent?.stop()
+            for conversation in worktree.conversations {
+                conversation.agent?.stop()
+            }
         }
     }
 
-    func restartAgent(for worktree: Worktree) {
-        stopAgent(for: worktree)
+    func restartAgent(for worktree: Worktree, conversation: Conversation) {
+        stopAgent(for: conversation, in: worktree)
         do {
-            try startAgent(for: worktree)
+            try startAgent(for: worktree, conversation: conversation)
         } catch {
             worktree.status = .error
             showError(error.localizedDescription)
         }
     }
 
-    func sendMessage(_ text: String, to worktree: Worktree) {
-        guard let agent = worktree.agent, agent.isRunning else {
+    func sendMessage(_ text: String, to worktree: Worktree, conversation: Conversation) {
+        guard let agent = conversation.agent, agent.isRunning else {
             // Auto-start agent if not running
             do {
-                try startAgent(for: worktree)
-                worktree.agent?.send(message: text)
+                try startAgent(for: worktree, conversation: conversation)
+                conversation.agent?.send(message: text)
             } catch {
                 showError(error.localizedDescription)
             }
@@ -285,9 +325,9 @@ final class AppState {
         agent.send(message: text)
     }
 
-    func clearChat(for worktree: Worktree) {
-        worktree.messages.removeAll()
-        ConfigService.saveMessages([], worktreeID: worktree.id)
+    func clearChat(for conversation: Conversation) {
+        conversation.messages.removeAll()
+        ConfigService.saveMessages([], conversationID: conversation.id)
     }
 
     // MARK: - GitHub Integration
@@ -325,7 +365,8 @@ final class AppState {
 
     func fixCI(for worktree: Worktree) async {
         guard let prNumber = worktree.prNumber,
-              let project = projectForWorktree(worktree) else { return }
+              let project = projectForWorktree(worktree),
+              let conversation = worktree.activeConversation else { return }
 
         do {
             let logs = try await GitHubService.getFailedLogs(
@@ -333,7 +374,7 @@ final class AppState {
                 repoPath: project.path
             )
             let message = "CI failed with these errors:\n\n\(logs)\n\nPlease fix."
-            sendMessage(message, to: worktree)
+            sendMessage(message, to: worktree, conversation: conversation)
         } catch {
             showError(error.localizedDescription)
         }

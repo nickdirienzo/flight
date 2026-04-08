@@ -46,18 +46,27 @@ struct ChatView: View {
     let worktree: Worktree
     @Environment(\.theme) private var theme
 
+    private var conversation: Conversation? {
+        worktree.activeConversation
+    }
+
     private var isThinking: Bool {
-        worktree.agentBusy
+        conversation?.agentBusy ?? false
     }
 
     private var sections: [ChatSection] {
-        ChatSection.build(from: worktree.messages)
+        guard let conversation else { return [] }
+        return ChatSection.build(from: conversation.messages)
     }
 
     var body: some View {
         VStack(spacing: 0) {
             chatHeader
                 .background(theme.headerBackground)
+
+            if worktree.conversations.count > 1 {
+                tabBar
+            }
 
             Divider()
 
@@ -74,8 +83,8 @@ struct ChatView: View {
                                 ToolGroupView(tools: tools, isActive: isLast && isThinking)
                                     .id(section.id)
                             case .system(let message):
-                                if message.isPermissionRequest {
-                                    PermissionRequestView(message: message, worktree: worktree, state: state)
+                                if message.isPermissionRequest, let conversation {
+                                    PermissionRequestView(message: message, conversation: conversation, state: state)
                                         .id(section.id)
                                 } else {
                                     SystemMessageView(message: message)
@@ -91,7 +100,7 @@ struct ChatView: View {
                     }
                     .padding()
                 }
-                .onChange(of: worktree.messages.count) { _, _ in
+                .onChange(of: conversation?.messages.count) { _, _ in
                     scrollToBottom(proxy: proxy)
                 }
                 .onChange(of: isThinking) { _, _ in
@@ -122,6 +131,75 @@ struct ChatView: View {
             }
         }
     }
+
+    // MARK: - Tab Bar
+
+    private var tabBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 2) {
+                ForEach(worktree.conversations) { conv in
+                    tabButton(for: conv)
+                }
+
+                Button {
+                    state.addConversation(to: worktree)
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(theme.secondaryText)
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+        }
+        .background(theme.headerBackground)
+    }
+
+    private func tabButton(for conv: Conversation) -> some View {
+        let isActive = conv.id == worktree.activeConversationID
+
+        return HStack(spacing: 4) {
+            if conv.agentBusy {
+                Circle()
+                    .fill(theme.orange)
+                    .frame(width: 6, height: 6)
+            }
+
+            Text(conv.name)
+                .font(.system(size: 11, weight: isActive ? .semibold : .regular))
+                .foregroundStyle(isActive ? theme.text : theme.secondaryText)
+                .lineLimit(1)
+
+            if worktree.conversations.count > 1 {
+                Button {
+                    state.removeConversation(conv, from: worktree)
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(theme.secondaryText.opacity(0.6))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isActive ? theme.inputBackground : Color.clear)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(isActive ? theme.border : Color.clear, lineWidth: 1)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            state.selectConversation(conv, in: worktree)
+        }
+    }
+
+    // MARK: - Header
 
     private var chatHeader: some View {
         HStack {
@@ -166,16 +244,20 @@ struct ChatView: View {
 
     private var headerStatusLabel: String {
         if worktree.status == .creating { return "creating" }
-        if worktree.agentBusy { return "working" }
-        if worktree.agent?.isRunning == true { return "ready" }
+        if let conv = conversation {
+            if conv.agentBusy { return "working" }
+            if conv.agent?.isRunning == true { return "ready" }
+        }
         if worktree.status == .error { return "error" }
         return "idle"
     }
 
     private var headerStatusColor: Color {
         if worktree.status == .creating { return theme.yellow }
-        if worktree.agentBusy { return theme.orange }
-        if worktree.agent?.isRunning == true { return theme.green }
+        if let conv = conversation {
+            if conv.agentBusy { return theme.orange }
+            if conv.agent?.isRunning == true { return theme.green }
+        }
         if worktree.status == .error { return theme.red }
         return theme.secondaryText
     }
@@ -294,7 +376,7 @@ struct SystemMessageView: View {
 
 struct PermissionRequestView: View {
     let message: AgentMessage
-    let worktree: Worktree
+    let conversation: Conversation
     @Bindable var state: AppState
     @Environment(\.theme) private var theme
     @State private var responded = false
@@ -323,14 +405,14 @@ struct PermissionRequestView: View {
                         .foregroundStyle(theme.green)
                 } else {
                     Button("Deny") {
-                        state.respondToPermission(worktree: worktree, requestID: requestID, allow: false)
+                        state.respondToPermission(conversation: conversation, requestID: requestID, allow: false)
                         responded = true
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
 
                     Button("Allow Once") {
-                        state.respondToPermission(worktree: worktree, requestID: requestID, allow: true)
+                        state.respondToPermission(conversation: conversation, requestID: requestID, allow: true)
                         responded = true
                     }
                     .buttonStyle(.borderedProminent)
