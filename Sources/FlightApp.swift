@@ -54,13 +54,22 @@ struct FlightApp: App {
 
             // Custom commands
             CommandMenu("Worktree") {
-                // Cmd+W — Remove current worktree
+                // Cmd+W — Close tab if multiple, otherwise close window
+                Button("Close Tab") {
+                    if let wt = state.selectedWorktree, wt.conversations.count > 1,
+                       let conv = wt.activeConversation {
+                        state.removeConversation(conv, from: wt)
+                    } else {
+                        NSApplication.shared.keyWindow?.close()
+                    }
+                }
+                .keyboardShortcut("w", modifiers: .command)
+
                 Button("Remove Worktree") {
                     if let wt = state.selectedWorktree {
                         Task { await state.removeWorktree(wt) }
                     }
                 }
-                .keyboardShortcut("w", modifiers: .command)
                 .disabled(state.selectedWorktree == nil)
 
                 Divider()
