@@ -102,10 +102,10 @@ struct FlightApp: App {
                 .keyboardShortcut("k", modifiers: .command)
                 .disabled(state.selectedWorktree == nil)
 
-                // Cmd+Shift+R — Copy remote session command
-                Button("Copy Remote Command") {
+                // Cmd+Shift+R — Open interactive remote session in Terminal
+                Button("Open Remote Session") {
                     if let wt = state.selectedWorktree {
-                        state.copyRemoteSessionCommand(for: wt)
+                        state.openRemoteSession(for: wt)
                     }
                 }
                 .keyboardShortcut("r", modifiers: [.command, .shift])

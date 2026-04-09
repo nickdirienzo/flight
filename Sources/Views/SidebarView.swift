@@ -97,8 +97,8 @@ struct SidebarView: View {
             }
         }
         if worktree.isRemote && worktree.workspaceName != nil {
-            Button("Copy Remote Command") {
-                state.copyRemoteSessionCommand(for: worktree)
+            Button("Open Remote Session") {
+                state.openRemoteSession(for: worktree)
             }
         }
         Divider()

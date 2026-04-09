@@ -495,13 +495,14 @@ final class AppState {
 
     // MARK: - Remote Session
 
-    /// Copies a `claude --resume` command to the clipboard so the user can
-    /// continue this remote worktree session from any terminal.
-    func copyRemoteSessionCommand(for worktree: Worktree) {
+    /// Opens an interactive `claude` session on the remote workspace in
+    /// Terminal.app. Because this is a full (non `-p`) session it registers
+    /// with the Anthropic backend and shows up in the Claude Code mobile app.
+    func openRemoteSession(for worktree: Worktree) {
         guard worktree.isRemote,
               let workspaceName = worktree.workspaceName,
               let remote = projectForWorktree(worktree)?.remoteMode else {
-            showError("Remote session command is only available for remote worktrees.")
+            showError("Remote session is only available for remote worktrees.")
             return
         }
 
@@ -514,12 +515,27 @@ final class AppState {
         }
 
         let command = "\(connectCmd) \(claudeArgs)"
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(command, forType: .string)
+        let escaped = command.replacingOccurrences(of: "\\", with: "\\\\")
+                             .replacingOccurrences(of: "\"", with: "\\\"")
 
-        // Brief confirmation via system message in chat
+        let script = """
+        tell application "Terminal"
+            do script "\(escaped)"
+            activate
+        end tell
+        """
+
+        if let appleScript = NSAppleScript(source: script) {
+            var error: NSDictionary?
+            appleScript.executeAndReturnError(&error)
+            if let error {
+                showError("Failed to open Terminal: \(error)")
+                return
+            }
+        }
+
         if let conversation {
-            let msg = AgentMessage(role: .system, content: .text("Copied remote command to clipboard"))
+            let msg = AgentMessage(role: .system, content: .text("Opened remote session in Terminal"))
             conversation.messages.append(msg)
         }
     }

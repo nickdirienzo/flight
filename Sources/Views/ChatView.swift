@@ -231,14 +231,14 @@ struct ChatView: View {
                 .font(.headline)
             if worktree.isRemote && worktree.workspaceName != nil {
                 Button {
-                    state.copyRemoteSessionCommand(for: worktree)
+                    state.openRemoteSession(for: worktree)
                 } label: {
                     Image(systemName: "terminal")
                         .font(.system(size: 12))
                         .foregroundStyle(theme.secondaryText)
                 }
                 .buttonStyle(.plain)
-                .help("Copy remote session command (Cmd+Shift+R)")
+                .help("Open remote session in Terminal (Cmd+Shift+R)")
             }
             Spacer()
             if let prNumber = worktree.prNumber {
