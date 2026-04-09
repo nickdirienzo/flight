@@ -493,6 +493,16 @@ final class AppState {
         } catch {
             // Silently fail CI checks — they'll retry on next poll
         }
+
+        do {
+            let status = try await forge.getPRStatus(
+                prNumber: prNumber,
+                repoPath: project.path
+            )
+            worktree.prStatus = status
+        } catch {
+            // Silently fail — retries on next poll
+        }
     }
 
     func fixCI(for worktree: Worktree) async {
@@ -686,7 +696,7 @@ final class AppState {
     private func discoverPR(for worktree: Worktree) async {
         guard let project = projectForWorktree(worktree),
               let forge = project.forgeProvider else { return }
-        if let number = await forge.getPRNumber(branch: worktree.branch, repoPath: project.path) {
+        if let number = await forge.getPRNumber(branch: worktree.branch, repoPath: worktree.path) {
             worktree.prNumber = number
             saveConfig()
             await checkCI(for: worktree)

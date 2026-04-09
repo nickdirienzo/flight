@@ -99,7 +99,7 @@ struct StreamEvent: Decodable {
         let subtype: String?
         let toolName: String?
         let description: String?
-        let input: [String: String]?
+        let input: [String: AnyCodable]?
 
         enum CodingKeys: String, CodingKey {
             case subtype, description, input
