@@ -67,15 +67,6 @@ struct ChatView: View {
         worktree.activeConversation
     }
 
-    private var isThinking: Bool {
-        conversation?.agentBusy ?? false
-    }
-
-    private var sections: [ChatSection] {
-        guard let conversation else { return [] }
-        return ChatSection.build(from: conversation.messages)
-    }
-
     var body: some View {
         VStack(spacing: 0) {
             chatHeader
@@ -87,57 +78,17 @@ struct ChatView: View {
 
             Divider()
 
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 12) {
-                        ForEach(Array(sections.enumerated()), id: \.element.id) { index, section in
-                            switch section {
-                            case .message(let message):
-                                MessageView(message: message)
-                                    .id(section.id)
-                            case .toolGroup(_, let tools):
-                                let isLast = index == sections.count - 1
-                                ToolGroupView(tools: tools, isActive: isLast && isThinking)
-                                    .id(section.id)
-                            case .provisionGroup(_, let logs):
-                                let isLast = index == sections.count - 1
-                                ProvisionGroupView(logs: logs, isActive: isLast && worktree.status == .creating)
-                                    .id(section.id)
-                            case .system(let message):
-                                if message.isPermissionRequest, let conversation {
-                                    PermissionRequestView(message: message, conversation: conversation, state: state)
-                                        .id(section.id)
-                                } else {
-                                    SystemMessageView(message: message)
-                                        .id(section.id)
-                                }
-                            }
-                        }
-
-                        if isThinking && !(sections.last.map { if case .toolGroup = $0 { true } else { false } } ?? false) {
-                            ThinkingIndicator()
-                                .id("thinking")
-                        }
-                    }
-                    .padding()
-                }
-                .onChange(of: conversation?.messages.count) { _, _ in
-                    scrollToBottom(proxy: proxy)
-                }
-                .onChange(of: isThinking) { _, _ in
-                    scrollToBottom(proxy: proxy)
-                }
-                .onAppear {
-                    scrollToBottom(proxy: proxy)
-                }
-            }
+            ChatMessageListView(
+                state: state,
+                worktree: worktree
+            )
 
             if conversation?.remoteSessionActive == true {
                 remoteSessionBar
             }
 
             if worktree.prNumber != nil {
-                prStatusStrip
+                PRStatusStripView(worktree: worktree, state: state)
             }
 
             Divider()
@@ -145,16 +96,6 @@ struct ChatView: View {
             InputBarView(state: state, worktree: worktree)
         }
         .background(theme.background)
-    }
-
-    private func scrollToBottom(proxy: ScrollViewProxy) {
-        withAnimation(.easeOut(duration: 0.2)) {
-            if isThinking {
-                proxy.scrollTo("thinking", anchor: .bottom)
-            } else if let last = sections.last {
-                proxy.scrollTo(last.id, anchor: .bottom)
-            }
-        }
     }
 
     // MARK: - Tab Bar
@@ -275,14 +216,130 @@ struct ChatView: View {
         .background(theme.accent.opacity(0.1))
     }
 
-    // MARK: - PR Status Strip
+    private var headerStatusLabel: String {
+        if worktree.status == .creating { return "creating" }
+        if let conv = conversation {
+            if conv.agentBusy { return "working" }
+            if conv.agent?.isRunning == true { return "ready" }
+        }
+        if worktree.status == .error { return "error" }
+        return "idle"
+    }
+
+    private var headerStatusColor: Color {
+        if worktree.status == .creating { return theme.yellow }
+        if let conv = conversation {
+            if conv.agentBusy { return theme.orange }
+            if conv.agent?.isRunning == true { return theme.green }
+        }
+        if worktree.status == .error { return theme.red }
+        return theme.secondaryText
+    }
+
+    private var statusColor: Color {
+        headerStatusColor
+    }
+
+}
+
+// MARK: - Chat Message List (isolated observation scope)
+
+/// Separate struct so that message-list layout is only invalidated when
+/// conversation messages change, NOT when CI/PR status updates arrive.
+struct ChatMessageListView: View {
+    @Bindable var state: AppState
+    let worktree: Worktree
+    @Environment(\.theme) private var theme
+
+    private var conversation: Conversation? {
+        worktree.activeConversation
+    }
+
+    private var isThinking: Bool {
+        conversation?.agentBusy ?? false
+    }
+
+    private var sections: [ChatSection] {
+        guard let conversation else { return [] }
+        return ChatSection.build(from: conversation.messages)
+    }
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 12) {
+                    ForEach(Array(sections.enumerated()), id: \.element.id) { index, section in
+                        switch section {
+                        case .message(let message):
+                            MessageView(message: message)
+                                .id(section.id)
+                        case .toolGroup(_, let tools):
+                            let isLast = index == sections.count - 1
+                            ToolGroupView(tools: tools, isActive: isLast && isThinking)
+                                .id(section.id)
+                        case .provisionGroup(_, let logs):
+                            let isLast = index == sections.count - 1
+                            ProvisionGroupView(logs: logs, isActive: isLast && worktree.status == .creating)
+                                .id(section.id)
+                        case .system(let message):
+                            if message.isPermissionRequest, let conversation {
+                                PermissionRequestView(message: message, conversation: conversation, state: state)
+                                    .id(section.id)
+                            } else {
+                                SystemMessageView(message: message)
+                                    .id(section.id)
+                            }
+                        }
+                    }
+
+                    if isThinking && !(sections.last.map { if case .toolGroup = $0 { true } else { false } } ?? false) {
+                        ThinkingIndicator()
+                            .id("thinking")
+                    }
+                }
+                .padding()
+            }
+            .onChange(of: conversation?.messages.count) { _, _ in
+                scrollToBottom(proxy: proxy)
+            }
+            .onChange(of: isThinking) { _, _ in
+                scrollToBottom(proxy: proxy)
+            }
+            .onAppear {
+                scrollToBottom(proxy: proxy)
+            }
+        }
+    }
+
+    private func scrollToBottom(proxy: ScrollViewProxy) {
+        withAnimation(.easeOut(duration: 0.2)) {
+            if isThinking {
+                proxy.scrollTo("thinking", anchor: .bottom)
+            } else if let last = sections.last {
+                proxy.scrollTo(last.id, anchor: .bottom)
+            }
+        }
+    }
+}
+
+// MARK: - PR Status Strip (isolated observation scope)
+
+/// Separate struct so that CI/PR status changes only invalidate this strip,
+/// not the entire chat message list above.
+struct PRStatusStripView: View {
+    let worktree: Worktree
+    @Bindable var state: AppState
+    @Environment(\.theme) private var theme
 
     @State private var showingCIPopover = false
     @State private var showingCommentsPopover = false
 
-    private var prStatusStrip: some View {
+    private var conversation: Conversation? {
+        worktree.activeConversation
+    }
+
+    var body: some View {
         HStack(spacing: 8) {
-            // Clickable PR link
             if let prNumber = worktree.prNumber {
                 Button {
                     if let urlStr = worktree.prStatus?.url, let url = URL(string: urlStr) {
@@ -301,18 +358,12 @@ struct ChatView: View {
                 .help(worktree.prStatus?.url ?? "")
             }
 
-            // CI pill with embedded Resolve
             ciChicklet
-
-            // Comments pill with embedded Resolve
             commentsChicklet
-
-            // Review decision (compact, no action)
             reviewPill
 
             Spacer()
 
-            // Ready to merge
             if worktree.prStatus?.reviewDecision == "APPROVED",
                worktree.ciStatus?.overall == .success {
                 Button {
@@ -335,8 +386,6 @@ struct ChatView: View {
         .padding(.horizontal)
         .padding(.vertical, 7)
     }
-
-    // MARK: - Chicklets
 
     @ViewBuilder
     private var ciChicklet: some View {
@@ -485,8 +534,6 @@ struct ChatView: View {
         )
     }
 
-    // MARK: - Popovers
-
     private var ciPopoverContent: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("CI Checks")
@@ -549,8 +596,6 @@ struct ChatView: View {
         .frame(width: 450)
     }
 
-    // MARK: - Actions
-
     private func resolveCI() {
         let failedChecks = worktree.ciStatus?.checks.filter { $0.state == "FAILURE" } ?? []
         var message = "Please address these failing CI checks:\n\n"
@@ -580,31 +625,6 @@ struct ChatView: View {
             state.sendMessage(message, to: worktree, conversation: conv)
         }
     }
-
-    private var headerStatusLabel: String {
-        if worktree.status == .creating { return "creating" }
-        if let conv = conversation {
-            if conv.agentBusy { return "working" }
-            if conv.agent?.isRunning == true { return "ready" }
-        }
-        if worktree.status == .error { return "error" }
-        return "idle"
-    }
-
-    private var headerStatusColor: Color {
-        if worktree.status == .creating { return theme.yellow }
-        if let conv = conversation {
-            if conv.agentBusy { return theme.orange }
-            if conv.agent?.isRunning == true { return theme.green }
-        }
-        if worktree.status == .error { return theme.red }
-        return theme.secondaryText
-    }
-
-    private var statusColor: Color {
-        headerStatusColor
-    }
-
 }
 
 // MARK: - Tool Group (collapsed chain)

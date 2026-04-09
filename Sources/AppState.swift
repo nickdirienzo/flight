@@ -18,6 +18,7 @@ final class AppState {
     var showingError = false
 
     private var ciPollingTimer: Timer?
+    private var ciPollingInProgress = false
     private var provisioningTasks: [String: Task<Void, Never>] = [:]
 
     var selectedProject: Project? {
@@ -507,8 +508,10 @@ final class AppState {
             worktree.ciStatus = CIStatus(checks: checks)
             ciLog.info("[checkCI] checks: \(checks.count) results")
 
-            // If checks are failing, pre-fetch logs to files
-            if worktree.ciStatus?.overall == .failure {
+            // If checks are failing and we don't already have logs, pre-fetch
+            if worktree.ciStatus?.overall == .failure,
+               worktree.ciLogsPaths.isEmpty,
+               !worktree.ciLogsFetching {
                 worktree.ciLogsFetching = true
                 Task {
                     defer { Task { @MainActor in worktree.ciLogsFetching = false } }
@@ -768,8 +771,10 @@ final class AppState {
 
     private func startCIPolling() {
         ciPollingTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
-            guard let self else { return }
+            guard let self, !self.ciPollingInProgress else { return }
             Task { @MainActor in
+                self.ciPollingInProgress = true
+                defer { self.ciPollingInProgress = false }
                 for worktree in self.allWorktrees {
                     if worktree.prNumber != nil {
                         await self.checkCI(for: worktree)
