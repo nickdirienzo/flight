@@ -132,6 +132,10 @@ struct ChatView: View {
                 }
             }
 
+            if conversation?.remoteSessionActive == true {
+                remoteSessionBar
+            }
+
             if worktree.ciStatus?.overall == .failure {
                 fixCIBar
             }
@@ -229,6 +233,17 @@ struct ChatView: View {
                 .frame(width: 8, height: 8)
             Text(worktree.branch)
                 .font(.headline)
+            if worktree.isRemote && worktree.workspaceName != nil {
+                Button {
+                    state.openRemoteSession(for: worktree)
+                } label: {
+                    Image(systemName: "terminal")
+                        .font(.system(size: 12))
+                        .foregroundStyle(theme.secondaryText)
+                }
+                .buttonStyle(.plain)
+                .help("Open remote session in Terminal (Cmd+Shift+R)")
+            }
             Spacer()
             if let prNumber = worktree.prNumber {
                 Label("PR #\(prNumber)", systemImage: "arrow.triangle.pull")
@@ -241,6 +256,28 @@ struct ChatView: View {
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
+    }
+
+    private var remoteSessionBar: some View {
+        HStack {
+            Image(systemName: "iphone.and.arrow.forward")
+                .foregroundStyle(theme.accent)
+            Text("Session continued remotely")
+                .font(.callout)
+                .foregroundStyle(theme.text)
+            Spacer()
+            Button("Sync") {
+                if let conv = conversation {
+                    Task { await state.syncRemoteSession(for: worktree, conversation: conv) }
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(theme.accent)
+            .controlSize(.small)
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 6)
+        .background(theme.accent.opacity(0.1))
     }
 
     private var fixCIBar: some View {

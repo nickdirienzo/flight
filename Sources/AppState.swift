@@ -513,6 +513,124 @@ final class AppState {
         }
     }
 
+    // MARK: - Remote Session
+
+    /// Starts a detached interactive `claude` session on the remote workspace
+    /// via SSH. Because it runs as a full (non `-p`) process it registers with
+    /// the Anthropic backend and appears in the Claude Code mobile app.
+    func openRemoteSession(for worktree: Worktree) {
+        guard worktree.isRemote,
+              let workspaceName = worktree.workspaceName,
+              let remote = projectForWorktree(worktree)?.remoteMode else {
+            showError("Remote session is only available for remote worktrees.")
+            return
+        }
+
+        let conversation = worktree.activeConversation
+        let connectCmd = remote.connect.replacingOccurrences(of: "{workspace}", with: workspaceName)
+
+        var claudeArgs = "claude"
+        if let sessionID = conversation?.sessionID {
+            claudeArgs += " --resume \(sessionID)"
+        }
+
+        // nohup + & detaches claude from the SSH session so it keeps
+        // running after the connection closes.
+        let command = "\(connectCmd) \"nohup \(claudeArgs) </dev/null &>/dev/null &\""
+
+        if let conversation {
+            let msg = AgentMessage(role: .system, content: .text("Starting remote session on \(workspaceName)..."))
+            conversation.messages.append(msg)
+        }
+
+        Task {
+            do {
+                try await ShellService.run(command)
+                if let conversation {
+                    conversation.remoteSessionActive = true
+                    conversation.handoffMessageCount = conversation.messages.count
+                    let msg = AgentMessage(role: .system, content: .text("Remote session started — available in Claude Code mobile app"))
+                    conversation.messages.append(msg)
+                    ConfigService.saveMessages(conversation.messages, conversationID: conversation.id)
+                    saveConfig()
+                }
+            } catch {
+                showError("Failed to start remote session: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Fetches the session transcript from the remote workspace and backfills
+    /// any messages that happened outside Flight (e.g. via the mobile app).
+    func syncRemoteSession(for worktree: Worktree, conversation: Conversation) async {
+        guard let sessionID = conversation.sessionID,
+              worktree.isRemote,
+              let workspaceName = worktree.workspaceName,
+              let remote = projectForWorktree(worktree)?.remoteMode else { return }
+
+        let connectCmd = remote.connect.replacingOccurrences(of: "{workspace}", with: workspaceName)
+
+        // `claude export` dumps the session transcript as JSONL.
+        // Adjust this command if the CLI surface changes.
+        let fetchCmd = "\(connectCmd) \"claude export --session \(sessionID) --format jsonl\""
+
+        do {
+            let output = try await ShellService.run(fetchCmd)
+            let lines = output.components(separatedBy: "\n").filter { !$0.isEmpty }
+
+            // Parse each line as a {role, content} object
+            var remoteMsgs: [(role: MessageRole, text: String)] = []
+            for line in lines {
+                guard let data = line.data(using: .utf8),
+                      let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let role = obj["role"] as? String else { continue }
+
+                // content may be a plain string or an array of content blocks
+                let text: String
+                if let s = obj["content"] as? String {
+                    text = s
+                } else if let blocks = obj["content"] as? [[String: Any]] {
+                    text = blocks.compactMap { $0["text"] as? String }.joined(separator: "\n")
+                } else {
+                    continue
+                }
+                guard !text.isEmpty else { continue }
+
+                let msgRole: MessageRole = role == "user" ? .user : .assistant
+                remoteMsgs.append((role: msgRole, text: text))
+            }
+
+            // Only backfill messages that occurred after the handoff
+            let handoff = conversation.handoffMessageCount ?? 0
+            if remoteMsgs.count > handoff {
+                let newMsgs = Array(remoteMsgs[handoff...])
+
+                let separator = AgentMessage(
+                    role: .system,
+                    content: .text("Synced \(newMsgs.count) message\(newMsgs.count == 1 ? "" : "s") from remote session")
+                )
+                conversation.messages.append(separator)
+
+                for msg in newMsgs {
+                    conversation.messages.append(
+                        AgentMessage(role: msg.role, content: .text(msg.text))
+                    )
+                }
+            }
+        } catch {
+            let msg = AgentMessage(
+                role: .system,
+                content: .text("Could not sync remote session — continuing from last known state")
+            )
+            conversation.messages.append(msg)
+        }
+
+        conversation.remoteSessionActive = false
+        conversation.handoffMessageCount = nil
+        ConfigService.saveMessages(conversation.messages, conversationID: conversation.id)
+        saveConfig()
+    }
+
     // MARK: - Keyboard Shortcut Actions
 
     func selectWorktreeByIndex(_ index: Int) {
