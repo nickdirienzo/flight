@@ -45,6 +45,24 @@ enum ForgeType: String, Codable, CaseIterable, Identifiable {
             )
         }
     }
+
+    /// Detect forge type from a git remote URL.
+    /// Returns nil for unrecognized hosts (user must configure manually).
+    static func detect(remoteURL: String) -> ForgeType? {
+        let lower = remoteURL.lowercased()
+        if lower.contains("github.com") { return .github }
+        // Forgejo/Gitea instances vary by host — can't auto-detect.
+        // User sets these explicitly via forgeConfig.
+        return nil
+    }
+
+    /// Detect forge type by reading the origin remote of a repo.
+    static func detect(inRepo path: String) async -> ForgeType? {
+        guard let output = try? await ShellService.run("git remote get-url origin", in: path) else {
+            return nil
+        }
+        return detect(remoteURL: output)
+    }
 }
 
 // MARK: - Forge Config (persisted per-project)

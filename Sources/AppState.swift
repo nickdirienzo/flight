@@ -55,6 +55,13 @@ final class AppState {
         if didClean { saveConfig() }
 
         startCIPolling()
+
+        // Auto-detect forge for any projects that don't have one configured yet
+        Task {
+            for project in projects where project.forgeConfig == nil {
+                await detectForge(for: project)
+            }
+        }
     }
 
     var hasRemoteMode: Bool {
@@ -69,6 +76,11 @@ final class AppState {
         projects.append(project)
         selectedProjectID = project.id
         saveConfig()
+
+        // Auto-detect forge from git remote
+        Task {
+            await detectForge(for: project)
+        }
     }
 
     func reloadConfig() {
@@ -513,6 +525,13 @@ final class AppState {
     }
 
     // MARK: - Private
+
+    private func detectForge(for project: Project) async {
+        if let detected = await ForgeType.detect(inRepo: project.path) {
+            project.forgeConfig = ForgeConfig(type: detected)
+            saveConfig()
+        }
+    }
 
     private func projectForWorktree(_ worktree: Worktree) -> Project? {
         projects.first { $0.worktrees.contains { $0.id == worktree.id } }
