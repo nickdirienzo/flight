@@ -124,7 +124,6 @@ final class ClaudeAgent {
             "-p",
             "--output-format", "stream-json",
             "--verbose",
-            "--dangerously-skip-permissions"
         ]
 
         // Local: use stdin for input. Remote: pass message as prompt arg (stdin over SSH is unreliable)
@@ -279,14 +278,15 @@ final class ClaudeAgent {
                             }
                         }
 
-                        // Auto-approve sandbox permission requests
-                        // (we use --dangerously-skip-permissions so these auto-resolve,
-                        // but responding immediately avoids any timeout delay)
+                        // Auto-approve tool permission requests, but DENY sandbox overrides.
+                        // This keeps the agent sandboxed to its worktree directory.
                         if event.type == "control_request",
                            let reqID = event.requestID {
+                            let isSandboxOverride = event.request?.input?["dangerouslyDisableSandbox"] != nil
+                            let allow = !isSandboxOverride
                             await MainActor.run { [weak self] in
-                                self?.respondToControlRequest(requestID: reqID, allow: true)
-                                self?.log("=== Auto-approved control_request \(reqID) ===")
+                                self?.respondToControlRequest(requestID: reqID, allow: allow)
+                                self?.log("=== \(allow ? "Approved" : "DENIED (sandbox override)") control_request \(reqID) ===")
                             }
                         }
 
