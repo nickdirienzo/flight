@@ -534,9 +534,10 @@ final class AppState {
             claudeArgs += " --resume \(sessionID)"
         }
 
-        // nohup + & detaches claude from the SSH session so it keeps
-        // running after the connection closes.
-        let command = "\(connectCmd) \"nohup \(claudeArgs) </dev/null &>/dev/null &\""
+        // Use tmux to give claude a real PTY so it stays alive as an
+        // interactive session visible in the Claude Code mobile app.
+        let tmuxSession = "flight-\(worktree.branch.replacingOccurrences(of: "/", with: "-"))"
+        let command = "\(connectCmd) \"tmux new-session -d -s \(tmuxSession) '\(claudeArgs)'\""
 
         if let conversation {
             let msg = AgentMessage(role: .system, content: .text("Starting remote session on \(workspaceName)..."))
