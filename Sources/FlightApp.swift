@@ -102,6 +102,15 @@ struct FlightApp: App {
                 .keyboardShortcut("k", modifiers: .command)
                 .disabled(state.selectedWorktree == nil)
 
+                // Cmd+Shift+R — Copy remote session command
+                Button("Copy Remote Command") {
+                    if let wt = state.selectedWorktree {
+                        state.copyRemoteSessionCommand(for: wt)
+                    }
+                }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
+                .disabled(state.selectedWorktree?.isRemote != true)
+
                 Divider()
 
                 // Cmd+1-9 — Switch worktrees

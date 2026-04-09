@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import SwiftUI
 
@@ -489,6 +490,37 @@ final class AppState {
             sendMessage(message, to: worktree, conversation: conversation)
         } catch {
             showError(error.localizedDescription)
+        }
+    }
+
+    // MARK: - Remote Session
+
+    /// Copies a `claude --resume` command to the clipboard so the user can
+    /// continue this remote worktree session from any terminal.
+    func copyRemoteSessionCommand(for worktree: Worktree) {
+        guard worktree.isRemote,
+              let workspaceName = worktree.workspaceName,
+              let remote = projectForWorktree(worktree)?.remoteMode else {
+            showError("Remote session command is only available for remote worktrees.")
+            return
+        }
+
+        let conversation = worktree.activeConversation
+        let connectCmd = remote.connect.replacingOccurrences(of: "{workspace}", with: workspaceName)
+
+        var claudeArgs = "claude"
+        if let sessionID = conversation?.sessionID {
+            claudeArgs += " --resume \(sessionID)"
+        }
+
+        let command = "\(connectCmd) \(claudeArgs)"
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(command, forType: .string)
+
+        // Brief confirmation via system message in chat
+        if let conversation {
+            let msg = AgentMessage(role: .system, content: .text("Copied remote command to clipboard"))
+            conversation.messages.append(msg)
         }
     }
 

@@ -96,6 +96,11 @@ struct SidebarView: View {
                 state.restartAgent(for: worktree, conversation: conv)
             }
         }
+        if worktree.isRemote && worktree.workspaceName != nil {
+            Button("Copy Remote Command") {
+                state.copyRemoteSessionCommand(for: worktree)
+            }
+        }
         Divider()
         Button("New Tab") {
             state.addConversation(to: worktree)
