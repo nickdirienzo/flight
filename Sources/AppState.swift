@@ -73,10 +73,11 @@ final class AppState {
 
     func reloadConfig() {
         let config = ConfigService.load()
-        // Reload remote mode configs per project
+        // Reload remote mode and forge configs per project
         for projectConfig in config.projects {
             if let project = projects.first(where: { $0.name == projectConfig.name }) {
                 project.remoteMode = projectConfig.remoteMode
+                project.forgeConfig = projectConfig.forgeConfig
             }
         }
     }
@@ -442,11 +443,17 @@ final class AppState {
         ConfigService.saveMessages([], conversationID: conversation.id)
     }
 
-    // MARK: - GitHub Integration
+    // MARK: - Forge Integration (PRs, CI)
 
     func createPR(for worktree: Worktree) async {
+        guard let project = projectForWorktree(worktree),
+              let forge = project.forgeProvider else {
+            showError(ForgeError.noForgeConfigured.localizedDescription)
+            return
+        }
+
         do {
-            let prNumber = try await GitHubService.createPR(
+            let prNumber = try await forge.createPR(
                 in: worktree.path,
                 branch: worktree.branch
             )
@@ -462,10 +469,11 @@ final class AppState {
 
     func checkCI(for worktree: Worktree) async {
         guard let prNumber = worktree.prNumber,
-              let project = projectForWorktree(worktree) else { return }
+              let project = projectForWorktree(worktree),
+              let forge = project.forgeProvider else { return }
 
         do {
-            let checks = try await GitHubService.getChecks(
+            let checks = try await forge.getChecks(
                 prNumber: prNumber,
                 repoPath: project.path
             )
@@ -478,10 +486,11 @@ final class AppState {
     func fixCI(for worktree: Worktree) async {
         guard let prNumber = worktree.prNumber,
               let project = projectForWorktree(worktree),
+              let forge = project.forgeProvider,
               let conversation = worktree.activeConversation else { return }
 
         do {
-            let logs = try await GitHubService.getFailedLogs(
+            let logs = try await forge.getFailedLogs(
                 prNumber: prNumber,
                 repoPath: project.path
             )
