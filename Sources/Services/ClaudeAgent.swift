@@ -167,9 +167,16 @@ final class ClaudeAgent {
         self.stdinPipe = stdin
         self.stdoutPipe = stdout
 
+        let busyCallback = self.onBusyChanged
         proc.terminationHandler = { [weak self] _ in
             Task { @MainActor in
-                self?.onTurnComplete()
+                if let self {
+                    self.onTurnComplete()
+                } else {
+                    // Agent was deallocated before process exited —
+                    // clear busy state directly so the UI doesn't stick on "thinking"
+                    busyCallback?(false)
+                }
             }
         }
 

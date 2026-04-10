@@ -382,6 +382,10 @@ final class AppState {
         let agent = ClaudeAgent()
         agent.onMessage = { [weak conversation] message in
             guard let conversation else { return }
+            if case .toolUse(let name, _) = message.content {
+                if name == "EnterPlanMode" { conversation.planMode = true }
+                else if name == "ExitPlanMode" { conversation.planMode = false }
+            }
             conversation.messages.append(message)
             ConfigService.saveMessages(conversation.messages, conversationID: conversation.id)
         }

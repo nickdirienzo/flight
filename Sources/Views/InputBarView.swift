@@ -12,7 +12,6 @@ struct InputBarView: View {
     @AppStorage("flightFontSize") private var fontSize: Double = 14
     @Environment(\.theme) private var theme
     @State private var messageText = ""
-    @State private var planMode = false
     @State private var attachedImages: [ImageAttachment] = []
 
     private var conversation: Conversation? {
@@ -23,12 +22,16 @@ struct InputBarView: View {
         conversation?.agentBusy ?? false
     }
 
+    private var planMode: Bool {
+        conversation?.planMode ?? false
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             // Plan mode bar
             HStack(spacing: 6) {
                 Button {
-                    planMode.toggle()
+                    conversation?.planMode.toggle()
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: planMode ? "map.fill" : "map")

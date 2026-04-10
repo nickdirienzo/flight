@@ -1,4 +1,5 @@
 import SwiftUI
+import Textual
 
 struct MarkdownText: View {
     let text: String
@@ -11,69 +12,44 @@ struct MarkdownText: View {
     }
 
     var body: some View {
-        let blocks = parseBlocks(text)
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
-                switch block {
-                case .paragraph(let text):
-                    renderInline(text)
-                case .codeBlock(let code, let lang):
-                    codeBlockView(code: code, language: lang)
-                case .bulletList(let items):
-                    VStack(alignment: .leading, spacing: 4) {
-                        ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                                Text("\u{2022}")
-                                    .foregroundStyle(theme.secondaryText)
-                                renderInline(item)
-                            }
-                        }
-                    }
-                case .numberedList(let items):
-                    VStack(alignment: .leading, spacing: 4) {
-                        ForEach(Array(items.enumerated()), id: \.offset) { i, item in
-                            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                                Text("\(i + 1).")
-                                    .foregroundStyle(theme.secondaryText)
-                                    .monospacedDigit()
-                                renderInline(item)
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        StructuredText(markdown: text)
+            .font(.system(size: fontSize))
+            .foregroundStyle(theme.text)
+            .textual.inlineStyle(
+                InlineStyle()
+                    .code(.foregroundColor(theme.cyan), .font(.system(size: fontSize - 1, design: .monospaced)))
+                    .strong(.foregroundColor(theme.text))
+                    .emphasis(.foregroundColor(theme.text))
+            )
+            .textual.codeBlockStyle(FlightCodeBlockStyle(fontSize: fontSize, theme: theme))
+            .tint(theme.accent)
     }
+}
 
-    // MARK: - Inline rendering
+// MARK: - Code Block Style
 
-    private func renderInline(_ text: String) -> Text {
-        let segments = parseInline(text)
-        var result = Text("")
-        for segment in segments {
-            switch segment {
-            case .plain(let str):
-                result = result + Text(str)
-                    .font(.system(size: fontSize))
-                    .foregroundColor(theme.text)
-            case .bold(let str):
-                result = result + Text(str)
-                    .font(.system(size: fontSize, weight: .bold))
-                    .foregroundColor(theme.text)
-            case .code(let str):
-                result = result + Text(str)
-                    .font(.system(size: fontSize - 1, design: .monospaced))
-                    .foregroundColor(theme.cyan)
-            }
-        }
-        return result
+private struct FlightCodeBlockStyle: StructuredText.CodeBlockStyle {
+    let fontSize: Double
+    let theme: ThemeColors
+
+    func makeBody(configuration: Configuration) -> some View {
+        FlightCodeBlockView(
+            configuration: configuration,
+            fontSize: fontSize,
+            theme: theme
+        )
     }
+}
 
-    // MARK: - Code block view
+private struct FlightCodeBlockView: View {
+    let configuration: StructuredText.CodeBlockStyleConfiguration
+    let fontSize: Double
+    let theme: ThemeColors
+    @State private var isHovered = false
 
-    private func codeBlockView(code: String, language: String?) -> some View {
+    var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if let lang = language, !lang.isEmpty {
+            if let lang = configuration.languageHint, !lang.isEmpty {
                 Text(lang)
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
                     .foregroundStyle(theme.secondaryText)
@@ -81,7 +57,7 @@ struct MarkdownText: View {
                     .padding(.top, 6)
                     .padding(.bottom, 2)
             }
-            Text(code)
+            configuration.label
                 .font(.system(size: fontSize - 1, design: .monospaced))
                 .foregroundStyle(theme.text)
                 .textSelection(.enabled)
@@ -95,148 +71,60 @@ struct MarkdownText: View {
             RoundedRectangle(cornerRadius: 6)
                 .stroke(theme.border, lineWidth: 1)
         )
-    }
-
-    // MARK: - Block parser
-
-    enum Block {
-        case paragraph(String)
-        case codeBlock(String, String?) // code, language
-        case bulletList([String])
-        case numberedList([String])
-    }
-
-    private func parseBlocks(_ text: String) -> [Block] {
-        var blocks: [Block] = []
-        let lines = text.components(separatedBy: "\n")
-        var i = 0
-
-        while i < lines.count {
-            let line = lines[i]
-
-            // Code block
-            if line.hasPrefix("```") {
-                let lang = String(line.dropFirst(3)).trimmingCharacters(in: .whitespaces)
-                var codeLines: [String] = []
-                i += 1
-                while i < lines.count && !lines[i].hasPrefix("```") {
-                    codeLines.append(lines[i])
-                    i += 1
-                }
-                i += 1 // skip closing ```
-                blocks.append(.codeBlock(codeLines.joined(separator: "\n"), lang.isEmpty ? nil : lang))
-                continue
+        .overlay(alignment: .bottomTrailing) {
+            CopyButton(theme: theme, visible: isHovered) {
+                configuration.codeBlock.copyToPasteboard()
             }
-
-            // Bullet list
-            if line.hasPrefix("- ") || line.hasPrefix("* ") {
-                var items: [String] = []
-                while i < lines.count && (lines[i].hasPrefix("- ") || lines[i].hasPrefix("* ")) {
-                    items.append(String(lines[i].dropFirst(2)))
-                    i += 1
-                }
-                blocks.append(.bulletList(items))
-                continue
-            }
-
-            // Numbered list
-            if let _ = line.range(of: #"^\d+\.\s"#, options: .regularExpression) {
-                var items: [String] = []
-                while i < lines.count,
-                      let range = lines[i].range(of: #"^\d+\.\s"#, options: .regularExpression) {
-                    items.append(String(lines[i][range.upperBound...]))
-                    i += 1
-                }
-                blocks.append(.numberedList(items))
-                continue
-            }
-
-            // Empty line — skip
-            if line.trimmingCharacters(in: .whitespaces).isEmpty {
-                i += 1
-                continue
-            }
-
-            // Paragraph — collect consecutive non-empty, non-special lines
-            var paraLines: [String] = []
-            while i < lines.count {
-                let l = lines[i]
-                if l.trimmingCharacters(in: .whitespaces).isEmpty ||
-                   l.hasPrefix("```") ||
-                   l.hasPrefix("- ") || l.hasPrefix("* ") ||
-                   l.range(of: #"^\d+\.\s"#, options: .regularExpression) != nil {
-                    break
-                }
-                paraLines.append(l)
-                i += 1
-            }
-            if !paraLines.isEmpty {
-                blocks.append(.paragraph(paraLines.joined(separator: " ")))
-            }
+            .padding(6)
         }
+        .onHover { isHovered = $0 }
+    }
+}
 
-        return blocks
+// MARK: - Copy Button
+
+struct CopyButton: View {
+    let theme: ThemeColors
+    var visible: Bool = true
+    var text: String? = nil
+    var onCopy: (() -> Void)? = nil
+    @State private var copied = false
+
+    init(text: String, theme: ThemeColors, visible: Bool = true) {
+        self.text = text
+        self.theme = theme
+        self.visible = visible
     }
 
-    // MARK: - Inline parser
-
-    enum InlineSegment {
-        case plain(String)
-        case bold(String)
-        case code(String)
+    init(theme: ThemeColors, visible: Bool = true, action: @escaping () -> Void) {
+        self.theme = theme
+        self.visible = visible
+        self.onCopy = action
     }
 
-    private func parseInline(_ text: String) -> [InlineSegment] {
-        var segments: [InlineSegment] = []
-        var remaining = text[...]
-
-        while !remaining.isEmpty {
-            // Inline code: `...`
-            if remaining.hasPrefix("`") {
-                let after = remaining.dropFirst()
-                if let endIdx = after.firstIndex(of: "`") {
-                    if !segments.isEmpty || remaining.startIndex != text.startIndex {
-                        // flush nothing
-                    }
-                    let code = String(after[after.startIndex..<endIdx])
-                    segments.append(.code(code))
-                    remaining = after[after.index(after: endIdx)...]
-                    continue
-                }
+    var body: some View {
+        Button {
+            if let onCopy {
+                onCopy()
+            } else if let text {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(text, forType: .string)
             }
-
-            // Bold: **...**
-            if remaining.hasPrefix("**") {
-                let after = remaining.dropFirst(2)
-                if let range = after.range(of: "**") {
-                    let bold = String(after[after.startIndex..<range.lowerBound])
-                    segments.append(.bold(bold))
-                    remaining = after[range.upperBound...]
-                    continue
-                }
+            copied = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                copied = false
             }
-
-            // Plain text: consume until next ` or **
-            var endIdx = remaining.endIndex
-            for j in remaining.indices {
-                if remaining[j] == "`" {
-                    endIdx = j
-                    break
-                }
-                if remaining[j] == "*",
-                   remaining.index(after: j) < remaining.endIndex,
-                   remaining[remaining.index(after: j)] == "*" {
-                    endIdx = j
-                    break
-                }
-            }
-            let plain = String(remaining[remaining.startIndex..<endIdx])
-            if !plain.isEmpty {
-                segments.append(.plain(plain))
-            }
-            remaining = remaining[endIdx...]
+        } label: {
+            Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(copied ? theme.green : theme.secondaryText)
+                .frame(width: 24, height: 24)
+                .background(theme.background)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
         }
-
-        return segments
+        .buttonStyle(.plain)
+        .opacity(visible || copied ? 1 : 0)
+        .animation(.easeInOut(duration: 0.15), value: visible)
+        .animation(.easeInOut(duration: 0.15), value: copied)
     }
 }

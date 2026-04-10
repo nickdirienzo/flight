@@ -5,6 +5,7 @@ enum ChatSection: Identifiable {
     case message(AgentMessage)
     case toolGroup(id: UUID, tools: [AgentMessage])
     case provisionGroup(id: UUID, logs: [AgentMessage])
+    case plan(AgentMessage)
     case system(AgentMessage)
 
     var id: UUID {
@@ -12,6 +13,7 @@ enum ChatSection: Identifiable {
         case .message(let m): return m.id
         case .toolGroup(let id, _): return id
         case .provisionGroup(let id, _): return id
+        case .plan(let m): return m.id
         case .system(let m): return m.id
         }
     }
@@ -23,7 +25,15 @@ enum ChatSection: Identifiable {
 
         func flushTools() {
             if !currentTools.isEmpty {
-                sections.append(.toolGroup(id: currentTools[0].id, tools: currentTools))
+                // Separate ExitPlanMode from regular tools
+                let planMessage = currentTools.first { $0.planContent != nil }
+                let otherTools = currentTools.filter { $0.planContent == nil }
+                if !otherTools.isEmpty {
+                    sections.append(.toolGroup(id: otherTools[0].id, tools: otherTools))
+                }
+                if let planMessage {
+                    sections.append(.plan(planMessage))
+                }
                 currentTools = []
             }
         }
@@ -280,6 +290,9 @@ struct ChatMessageListView: View {
                         case .provisionGroup(_, let logs):
                             let isLast = index == sections.count - 1
                             ProvisionGroupView(logs: logs, isActive: isLast && worktree.status == .creating)
+                                .id(section.id)
+                        case .plan(let message):
+                            PlanView(message: message, state: state, worktree: worktree)
                                 .id(section.id)
                         case .system(let message):
                             if message.isPermissionRequest, let conversation {
@@ -603,8 +616,6 @@ struct PRStatusStripView: View {
             message += "- **\(check.name)**"
             if let path = worktree.ciLogsPaths[check.name] {
                 message += " — logs: `\(path)`"
-            } else if let link = check.link {
-                message += ": \(link)"
             }
             message += "\n"
         }
@@ -783,6 +794,289 @@ struct ProvisionGroupView: View {
                 .stroke(theme.border.opacity(0.5), lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+// MARK: - Plan View
+
+struct PlanView: View {
+    let message: AgentMessage
+    @Bindable var state: AppState
+    let worktree: Worktree
+    @AppStorage("flightFontSize") private var fontSize: Double = 14
+    @Environment(\.theme) private var theme
+
+    @State private var comments: [Int: String] = [:]  // item index -> comment text
+    @State private var commentingOn: Int? = nil        // which item has comment field open
+    @State private var hoveredItem: Int? = nil
+    @State private var resolved = false
+
+    private var conversation: Conversation? {
+        worktree.activeConversation
+    }
+
+    private var items: [PlanItem] {
+        guard let plan = message.planContent else { return [] }
+        return PlanItem.parse(plan)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Header
+            HStack(spacing: 6) {
+                Image(systemName: "map.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(theme.purple)
+                Text("Plan")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(theme.purple)
+                Spacer()
+                if resolved {
+                    Text("Approved")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(theme.green)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+
+            Divider()
+                .overlay(theme.purple.opacity(0.2))
+
+            // Plan items
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(items.enumerated()), id: \.offset) { index, item in
+                    planItemRow(item: item, index: index)
+                }
+            }
+            .padding(.vertical, 4)
+
+            // Action buttons
+            if !resolved {
+                Divider()
+                    .overlay(theme.purple.opacity(0.2))
+
+                HStack(spacing: 8) {
+                    Spacer()
+
+                    let hasComments = !comments.values.filter({ !$0.trimmingCharacters(in: .whitespaces).isEmpty }).isEmpty
+
+                    if hasComments {
+                        Button { requestChanges() } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "bubble.left")
+                                    .font(.system(size: 10))
+                                Text("Request Changes (\(activeCommentCount))")
+                                    .font(.system(size: 11, weight: .medium))
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(theme.orange.opacity(0.15))
+                            .foregroundStyle(theme.orange)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    Button { approve() } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 10, weight: .bold))
+                            Text("Approve Plan")
+                                .font(.system(size: 11, weight: .medium))
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(theme.green.opacity(0.15))
+                        .foregroundStyle(theme.green)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+            }
+        }
+        .background(theme.purple.opacity(0.06))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(theme.purple.opacity(0.3), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    @ViewBuilder
+    private func planItemRow(item: PlanItem, index: Int) -> some View {
+        let hasComment = comments[index]?.isEmpty == false
+        let isHovered = hoveredItem == index
+        let showButton = !resolved && (isHovered || hasComment || commentingOn == index)
+
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline, spacing: 0) {
+                // Floating comment button (Notion-style, left gutter)
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        commentingOn = commentingOn == index ? nil : index
+                    }
+                } label: {
+                    Image(systemName: hasComment ? "bubble.left.fill" : "bubble.left")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(hasComment ? theme.orange : theme.secondaryText)
+                        .frame(width: 22, height: 22)
+                        .background(showButton ? theme.inputBackground : .clear)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                }
+                .buttonStyle(.plain)
+                .opacity(showButton ? 1 : 0)
+                .animation(.easeInOut(duration: 0.1), value: showButton)
+
+                // Item label (number/bullet only — no label for plain paragraphs)
+                if item.label != "\u{00B6}" {
+                    Text(item.label)
+                        .font(.system(size: fontSize - 1, weight: .medium))
+                        .foregroundStyle(theme.purple.opacity(0.6))
+                        .padding(.trailing, 6)
+                }
+
+                // Item text
+                MarkdownText(item.text, fontSize: fontSize)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 4)
+            .contentShape(Rectangle())
+            .onHover { hoveredItem = $0 ? index : (hoveredItem == index ? nil : hoveredItem) }
+
+            // Inline comment field
+            if commentingOn == index {
+                TextField("Leave a comment...", text: Binding(
+                    get: { comments[index] ?? "" },
+                    set: { comments[index] = $0 }
+                ))
+                .textFieldStyle(.plain)
+                .font(.system(size: fontSize - 1))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(theme.inputBackground)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(theme.orange.opacity(0.4), lineWidth: 1)
+                )
+                .padding(.leading, 28)
+                .padding(.trailing, 14)
+                .padding(.bottom, 4)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+    }
+
+    private var activeCommentCount: Int {
+        comments.values.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.count
+    }
+
+    private func approve() {
+        guard let conversation else { return }
+        resolved = true
+        state.sendMessage("The plan looks good. Proceed with the implementation.", to: worktree, conversation: conversation)
+    }
+
+    private func requestChanges() {
+        guard let conversation else { return }
+        let activeComments = comments
+            .sorted(by: { $0.key < $1.key })
+            .filter { !$0.value.trimmingCharacters(in: .whitespaces).isEmpty }
+
+        var feedback = "I have some feedback on the plan:\n\n"
+        for (index, comment) in activeComments {
+            let item = items[index]
+            feedback += "- **\(item.label) \(item.text.prefix(60))\(item.text.count > 60 ? "..." : "")**: \(comment)\n"
+        }
+        feedback += "\nPlease revise the plan to address these comments."
+
+        resolved = true
+        state.sendMessage(feedback, to: worktree, conversation: conversation)
+    }
+}
+
+// MARK: - Plan Item Parsing
+
+struct PlanItem {
+    let label: String  // "1.", "2.", "•", "-"
+    let text: String
+
+    static func parse(_ plan: String) -> [PlanItem] {
+        var items: [PlanItem] = []
+        let lines = plan.components(separatedBy: "\n")
+        var i = 0
+
+        while i < lines.count {
+            let line = lines[i]
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+
+            // Numbered list: "1. text" or "1) text"
+            if let match = trimmed.range(of: #"^(\d+[.\)])\s+"#, options: .regularExpression) {
+                let label = String(trimmed[match].trimmingCharacters(in: .whitespaces))
+                    .replacingOccurrences(of: ")", with: ".")
+                let numLabel = label.hasSuffix(".") ? label : label + "."
+                var text = String(trimmed[match.upperBound...])
+                // Collect continuation lines
+                i += 1
+                while i < lines.count {
+                    let next = lines[i].trimmingCharacters(in: .whitespaces)
+                    if next.isEmpty || next.range(of: #"^(\d+[.\)])\s+"#, options: .regularExpression) != nil
+                        || next.hasPrefix("- ") || next.hasPrefix("* ") || next.hasPrefix("```") {
+                        break
+                    }
+                    text += " " + next
+                    i += 1
+                }
+                items.append(PlanItem(label: numLabel, text: text))
+                continue
+            }
+
+            // Bullet list: "- text" or "* text"
+            if trimmed.hasPrefix("- ") || trimmed.hasPrefix("* ") {
+                var text = String(trimmed.dropFirst(2))
+                i += 1
+                while i < lines.count {
+                    let next = lines[i].trimmingCharacters(in: .whitespaces)
+                    if next.isEmpty || next.hasPrefix("- ") || next.hasPrefix("* ")
+                        || next.range(of: #"^(\d+[.\)])\s+"#, options: .regularExpression) != nil
+                        || next.hasPrefix("```") {
+                        break
+                    }
+                    text += " " + next
+                    i += 1
+                }
+                items.append(PlanItem(label: "\u{2022}", text: text))
+                continue
+            }
+
+            // Non-empty paragraph lines become their own item
+            if !trimmed.isEmpty && !trimmed.hasPrefix("```") {
+                var text = trimmed
+                i += 1
+                while i < lines.count {
+                    let next = lines[i].trimmingCharacters(in: .whitespaces)
+                    if next.isEmpty || next.hasPrefix("- ") || next.hasPrefix("* ")
+                        || next.range(of: #"^(\d+[.\)])\s+"#, options: .regularExpression) != nil
+                        || next.hasPrefix("```") {
+                        break
+                    }
+                    text += " " + next
+                    i += 1
+                }
+                items.append(PlanItem(label: "\u{00B6}", text: text))
+                continue
+            }
+
+            i += 1
+        }
+        return items
     }
 }
 

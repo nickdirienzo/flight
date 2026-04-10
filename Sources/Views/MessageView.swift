@@ -9,6 +9,8 @@ struct MessageView: View {
         message.role == .user
     }
 
+    @State private var isHovered = false
+
     var body: some View {
         HStack {
             if isUserMessage { Spacer(minLength: 80) }
@@ -32,9 +34,16 @@ struct MessageView: View {
                     .stroke(isUserMessage ? Color.clear : theme.border, lineWidth: 1)
             )
             .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay(alignment: .bottomTrailing) {
+                if !isUserMessage {
+                    CopyButton(text: message.textContent, theme: theme, visible: isHovered)
+                        .padding(6)
+                }
+            }
 
             if !isUserMessage { Spacer(minLength: 80) }
         }
+        .onHover { isHovered = $0 }
     }
 }
 

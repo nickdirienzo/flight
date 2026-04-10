@@ -67,6 +67,34 @@ struct AgentMessage: Identifiable, Codable {
         return false
     }
 
+    var planContent: String? {
+        guard case .toolUse(let name, let input) = content else { return nil }
+        guard let data = input.data(using: .utf8),
+              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+
+        // ExitPlanMode has "plan" field
+        if name == "ExitPlanMode", let plan = dict["plan"] as? String {
+            return plan
+        }
+
+        // Write to .claude/plans/ has "content" field
+        if name == "Write",
+           let path = dict["file_path"] as? String,
+           path.contains(".claude/plans/"),
+           let content = dict["content"] as? String {
+            return content
+        }
+
+        return nil
+    }
+
+    var toolName: String? {
+        guard case .toolUse(let name, _) = content else { return nil }
+        return name
+    }
+
     var toolDescription: String? {
         guard case .toolUse(_, let input) = content,
               let data = input.data(using: .utf8),

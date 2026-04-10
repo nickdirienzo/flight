@@ -1,14 +1,21 @@
-// swift-tools-version: 5.9
+// swift-tools-version: 6.0
 
 import PackageDescription
 
 let package = Package(
     name: "Flight",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS(.v15)],
+    dependencies: [
+        .package(url: "https://github.com/gonzalezreal/textual", from: "0.3.1"),
+    ],
     targets: [
         .executableTarget(
             name: "Flight",
-            path: "Sources"
+            dependencies: [
+                .product(name: "Textual", package: "textual"),
+            ],
+            path: "Sources",
+            swiftSettings: [.swiftLanguageMode(.v5)]
         )
     ]
 )

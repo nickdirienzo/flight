@@ -7,6 +7,7 @@ final class Conversation: Identifiable {
     var messages: [AgentMessage]
     var sessionID: String?
     var agentBusy: Bool = false
+    var planMode: Bool = false
     var agent: ClaudeAgent?
 
     /// True while the session has been handed off to an interactive remote
