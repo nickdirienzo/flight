@@ -2,34 +2,37 @@
 
 ## Concepts
 
-**Workspace** — a remote machine (e.g. EC2 instance via Coder). Long-lived, provisioned once, shared across multiple worktrees. Identified by a name (e.g. `flight-soft-gem-62ea`).
+**Workspace** — a remote machine (e.g. EC2 instance via Coder, a raw SSH host, anything). Long-lived, provisioned once, shared across multiple worktrees. Identified by a name (e.g. `flight-soft-gem-62ea`).
 
 **Worktree** — a session/branch running on a workspace. Each worktree has its own conversation with Claude. Multiple worktrees can run on the same workspace simultaneously.
 
 **Local worktree** — 1:1 with a git worktree directory on your Mac. No workspace concept. Provisioned via `git worktree add`, torn down via `git worktree remove`.
 
-**Remote worktree** — many-to-one with a workspace. Connected via SSH tunnel (e.g. `coder ssh {workspace} --`). Claude runs on the remote machine.
+**Remote worktree** — many-to-one with a workspace. Connected via an SSH-compatible wrapper the project provides. Claude runs on the remote machine.
 
 ## Data Model
 
 ```
 Project
-  ├─ remoteMode: RemoteModeConfig?    ← per-project, not global
+  ├─ remoteMode: RemoteModeConfig?    ← settings-level templates (optional)
   │
   ├─ Worktree (local)
   │    ├─ branch: "flight/cool-fox-a3b2"
-  │    ├─ path: "~/flight/worktrees/mirage/flight/cool-fox-a3b2"
+  │    ├─ path: "~/flight/worktrees/<repo>/flight/cool-fox-a3b2"
   │    ├─ isRemote: false
   │    └─ conversations: [Conversation]
   │
   ├─ Worktree (remote, provisioned)
   │    ├─ branch: "flight/wild-fin-97af"
   │    ├─ workspaceName: "flight-wild-fin-97af"  ← shared across worktrees
+  │    ├─ remoteURL: "https://flight-wild-fin-97af.example.com"
+  │    ├─ remoteSSHTarget: "coder.flight-wild-fin-97af"
+  │    ├─ remoteRepoPath: "/home/ubuntu/my-repo"
   │    ├─ isRemote: true
   │    └─ conversations: [Conversation]
   │
   └─ Worktree (remote, attached to same workspace)
-       ├─ branch: "flight-wild-fin-97af"
+       ├─ branch: "flight-wild-fin-97af/abcd"
        ├─ workspaceName: "flight-wild-fin-97af"  ← same workspace as above
        ├─ isRemote: true
        └─ conversations: [Conversation]
@@ -37,113 +40,118 @@ Project
 
 Key relationship: multiple worktrees can share a `workspaceName`. The workspace (machine) is only torn down when the last worktree referencing it is removed.
 
-## Config
+## Configuration
 
-Remote mode is configured **per project** in `~/flight/config.json`:
+Remote mode has two sources, with settings taking precedence over on-disk scripts on a per-lifecycle basis:
 
-```json
-{
-  "projects": [
-    {
-      "id": "...",
-      "path": "/Users/nick/code/mirage/mirage",
-      "remoteMode": {
-        "provision": "~/flight/flight-provision {branch}",
-        "connect": "coder ssh {workspace} --",
-        "teardown": "coder delete {workspace} --yes",
-        "list": "~/flight/flight-list"
-      },
-      "worktreeConfigs": [...]
-    },
-    {
-      "id": "...",
-      "path": "/Users/nick/code/nickdirienzo/flight",
-      "worktreeConfigs": [...]
-    }
-  ]
-}
+1. **`.flight/<lifecycle>` in the repo** — executable shell script, committed to the repo so the whole team uses the same provisioning flow. This is the intended default.
+2. **`project.remoteMode.<lifecycle>` in `~/flight/config.json`** — shell command string, configurable via Settings > Remote. Overrides the on-disk script for local iteration or per-machine overrides.
+
+Any lifecycle with no script and no settings entry is considered unset. Provision and connect are required for remote mode to work; teardown and list are optional.
+
+Different projects can use different infra (Coder, EC2 via raw SSH, a GPU cluster, etc.) or have no remote mode at all — the scripts are the abstraction layer.
+
+## Lifecycle scripts
+
+All four lifecycle commands run via `zsh -l -c` with `cwd` set to the repo root. Each gets a specific environment and argv contract:
+
+### `provision`
+
+**Env:** `FLIGHT_BRANCH` — the newly generated branch name (e.g. `flight/wild-fin-97af`).
+
+**Contract:**
+- Stream progress to stdout. Flight shows each line in the chat UI as a system message (UI only — not sent to Claude's context).
+- Emit `FLIGHT_OUTPUT: key=value` lines for structured metadata (see below). These are parsed out and stripped from the displayed log.
+- Print the created workspace name as the **last non-metadata line** of stdout.
+- Exit 0 on success, non-zero on failure. Flight does NOT manage timeouts; the script runs until it completes or its Task is cancelled.
+
+### `connect`
+
+**Env:** `FLIGHT_WORKSPACE` — the workspace name returned by provision.
+
+**Contract:** the command receives the remote invocation as `"$@"` and is expected to run it on the workspace (ssh-style wrapper). A minimal Coder implementation:
+
+```bash
+#!/usr/bin/env bash
+exec coder ssh "${FLIGHT_WORKSPACE:?}" -- "$@"
 ```
 
-- `provision` — runs on new workspace creation. `{branch}` substituted. Must print workspace name as last line of stdout.
-- `connect` — SSH tunnel prefix. `{workspace}` substituted. Prepended to the claude command.
-- `teardown` — runs when last worktree on a workspace is removed. `{workspace}` substituted.
-- `list` — optional. Prints one running workspace name per line. Populates the attach picker.
+Flight calls this every turn to run a `claude -p …` invocation remotely.
 
-Different projects can use different infra (Coder, DGX Spark, etc.) or have no remote mode at all.
+### `teardown`
 
-Configurable via Settings > Remote tab (project picker) or by editing the config file directly.
+**Env:** `FLIGHT_WORKSPACE`.
+
+**Contract:** destroy the workspace. Runs when the **last** worktree referencing that `workspaceName` is removed. If other worktrees still share the workspace, teardown is skipped.
+
+### `list`
+
+**Env:** none.
+
+**Contract:** print one running workspace name per line. Populates the "attach to existing" chips in the remote prompt sheet. Empty output is fine.
+
+## `FLIGHT_OUTPUT` metadata protocol
+
+Provision scripts can emit lines matching `FLIGHT_OUTPUT: key=value` to hand structured data back to Flight. These lines are stripped from the displayed log. Recognised keys:
+
+| Key | Consumed by | Description |
+|---|---|---|
+| `url` | Chat header "Open URL" button | Browser URL for the workspace (web IDE, dashboard). Right-click gives "Copy URL". |
+| `ssh_target` | "Open in VS Code" button | Value that follows `ssh-remote+` in a VS Code Remote-SSH URL. E.g. `coder.my-workspace` or `user@host`. |
+| `repo_path` | "Open in VS Code" button | Path to the repo checkout on the remote. E.g. `/home/ubuntu/my-repo`. |
+
+Unknown keys are silently ignored, so adding new ones is forward-compatible. Missing keys disable the features that need them (the VS Code button won't appear for a remote worktree without `ssh_target` AND `repo_path`).
 
 ## Flows
 
-### 1. Provision new workspace (Shift+Cmd+N → "New")
+### 1. Provision new workspace (Cmd+Shift+N → pick project → "New")
 
-1. User types a prompt, selects "New"
-2. Flight generates a random branch name (`flight/calm-owl-a3b2`)
-3. Worktree appears immediately in sidebar with "creating" status
-4. Runs `provision` command, streaming output to chat UI as system messages
-5. Provision script outputs workspace name as last line of stdout
-6. Flight captures workspace name, builds connect prefix from `connect` template
-7. Spawns Claude via `{connect prefix} claude -p --output-format stream-json ...`
-8. Sends initial prompt to Claude
+1. User triggers Cmd+Shift+N. If multiple projects have remote support, a picker opens to select one. Otherwise the remote prompt sheet opens directly.
+2. User types a prompt, selects "New".
+3. Flight generates a random branch name (`flight/calm-owl-a3b2`).
+4. Worktree appears immediately in the sidebar with "creating" status.
+5. Runs `provision` with `FLIGHT_BRANCH` set, streaming output to the provisioning log group in the chat.
+6. `FLIGHT_OUTPUT` lines are captured and applied to the worktree.
+7. The last non-metadata line is captured as the workspace name.
+8. Flight calls `startAgent` which builds the remote invocation: `zsh -l -c '<connect command>' _ '<claude invocation>'`.
+9. First turn sends the initial prompt. A notification fires when the first response arrives.
 
-### 2. Attach to existing workspace (Shift+Cmd+N → select workspace)
+### 2. Attach to existing workspace (Cmd+Shift+N → pick project → select workspace)
 
-1. Dialog shows running workspaces (fetched via `list` command) as selectable chips
-2. User picks a workspace and types a prompt
-3. Flight creates a new worktree entry pointing at that workspace (no provisioning)
-4. Spawns Claude via connect prefix — fresh session (no `--resume`)
-5. Sends initial prompt to Claude
+1. The remote prompt sheet fetches `list` output and shows running workspaces as chips alongside "New".
+2. User picks a workspace and types a prompt.
+3. Flight creates a new worktree entry pointing at that workspace (no provisioning).
+4. Spawns a fresh Claude session via connect — no `--resume`, since it's a new conversation.
+5. Sends the initial prompt.
 
-This lets you run multiple independent Claude sessions on the same machine.
+This lets you run multiple independent Claude sessions on the same machine without re-provisioning.
 
 ### 3. Remove remote worktree
 
-1. Stop agent(s), clean up conversations/chat history
-2. Check if any OTHER worktrees across all projects reference the same `workspaceName`
-3. If yes — just remove the worktree entry (workspace stays running for other worktrees)
-4. If no — run `teardown` command to destroy the workspace
-
-## Provision Script Protocol
-
-The provision script must:
-- Accept the branch name as its argument (substituted from `{branch}`)
-- Stream progress to stdout (Flight displays each line in the chat UI as system messages — UI only, not sent to Claude's context)
-- Print the workspace name as the **last line** of stdout (Flight captures this)
-- Exit 0 on success, non-zero on failure
-- Handle its own error cases (CLI not installed, not authed, etc.)
-
-Flight does NOT manage timeouts — the script runs until it completes or is cancelled (via Task cancellation, which sends SIGTERM to the process).
-
-## List Script Protocol
-
-The list script must:
-- Print one workspace name per line to stdout
-- Only include workspaces that are ready to connect to
-- Exit 0 (empty output is fine — means no running workspaces)
-
-Flight is backend-agnostic — it doesn't know about Coder, AWS, or any specific infra. The scripts are the abstraction layer.
+1. Stop the agent(s), delete chat history.
+2. Check if any other worktrees share the same `workspaceName`.
+3. If yes → just remove the worktree entry (workspace stays running).
+4. If no → run `teardown`. On success, silently drop the worktree from Flight. On failure, surface the error and still drop the worktree — the assumption being "the user can always clean up on the host side, but Flight getting stuck is unrecoverable."
 
 ## UI
 
 ### Sidebar
-- Remote worktrees show a cloud icon
-- Multiple worktrees on the same workspace are independent entries
-- Status indicators work the same (idle/working/ready/error)
-- Per-project `+` button creates local worktrees; Shift+Cmd+N for remote
+- Remote worktrees show a cloud icon.
+- Per-project `+` creates a local worktree. Shift+click the `+` on a remote-capable project opens the remote prompt sheet for that project.
+- Multiple worktrees on the same workspace are independent entries in the list.
 
-### Shift+Cmd+N Dialog
-- Only enabled when the selected project has `remoteMode` configured
-- Top: workspace selector — "New" chip (default) + chips for each running workspace from `list` command
-- Middle: prompt text editor (multiline, Cmd+Enter to submit)
-- Bottom: "Launch" (new) or "Connect" (existing) button
-- Workspaces scoped to the selected project's `list` command
+### Remote prompt sheet
+- Workspace selector at the top: "New" chip (default) + chips for each running workspace from `list`.
+- Prompt text editor (multiline, Cmd+Enter to submit, Enter inserts a newline).
+- "Launch" (for new) or "Connect" (for existing) button.
 
-### Settings > Remote Tab
-- Project picker at top — each project configured independently
-- Provision, Connect, Teardown, List (optional) fields
-- Save/Remove buttons per project
+### Chat header
+- Status dot + branch name.
+- Terminal icon: opens a full interactive `claude` session on the remote via tmux (persists outside Flight, shows up in the Claude Code mobile app).
+- Link icon: opens the `url` from `FLIGHT_OUTPUT` in the browser. Right-click → Copy URL.
+- Code brackets icon: opens the worktree in VS Code. Local worktrees use `code --new-window <path>`; remote worktrees use `code --new-window --remote ssh-remote+<ssh_target> <repo_path>`.
 
-### Chat
-- Provisioning progress streams as system messages (UI-only, not sent to Claude)
-- "Connecting to {workspace}..." message on attach
-- "Workspace {name} ready. Connecting agent..." on provision complete
+### Settings > Remote
+- Project picker at top — each project's remote mode is edited independently.
+- Provision / Connect / Teardown / List text fields. When a corresponding `.flight/<name>` exists in the repo, a small pill appears next to the label showing whether the settings entry is overriding it or the on-disk script is being used.
+- Save handles both "add/update" and "clear" (empty all fields and save to drop the settings entry).
