@@ -276,14 +276,30 @@ final class AppState {
                 ) else {
                     throw ShellError.failed(command: "provision", exitCode: -1, stderr: "Remote provision not configured")
                 }
-                let workspaceName = try await ShellService.runStreaming(
+                let output = try await ShellService.runStreaming(
                     resolvedProvision.command,
                     in: resolvedProvision.workingDirectory ?? project.path,
                     environment: resolvedProvision.environment
-                ) { [weak conversation] line in
+                ) { [weak conversation, weak worktree] line in
+                    // Reserved `FLIGHT_OUTPUT: key=value` lines are metadata,
+                    // not progress — apply them to the worktree and suppress
+                    // them from the displayed log.
+                    if let (key, value) = RemoteScriptsService.parseFlightOutput(line) {
+                        if let worktree, key == "url" {
+                            worktree.remoteURL = value
+                        }
+                        return
+                    }
                     let msg = AgentMessage(role: .system, content: .provisionLog(line))
                     conversation?.messages.append(msg)
-                }.components(separatedBy: "\n").last?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                }
+
+                // Workspace name is the last non-metadata, non-empty line.
+                let workspaceName = output
+                    .components(separatedBy: "\n")
+                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .last(where: { !$0.isEmpty && RemoteScriptsService.parseFlightOutput($0) == nil })
+                    ?? ""
 
                 try Task.checkCancellation()
 

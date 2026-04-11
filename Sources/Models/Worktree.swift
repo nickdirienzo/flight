@@ -26,6 +26,10 @@ final class Worktree: Identifiable {
     // Remote mode
     var isRemote: Bool
     var workspaceName: String?
+    /// Optional browser URL for the remote workspace (e.g. a web IDE or
+    /// dashboard). Populated from `FLIGHT_OUTPUT: url=...` lines the
+    /// provision script emits on stdout.
+    var remoteURL: String?
 
     var activeConversation: Conversation? {
         conversations.first { $0.id == activeConversationID }
@@ -76,6 +80,7 @@ struct WorktreeConfig: Codable {
     var prNumber: Int?
     var isRemote: Bool?
     var workspaceName: String?
+    var remoteURL: String?
     var conversations: [ConversationConfig]?
     var activeConversationID: UUID?
 
@@ -85,6 +90,7 @@ struct WorktreeConfig: Codable {
         self.prNumber = worktree.prNumber
         self.isRemote = worktree.isRemote
         self.workspaceName = worktree.workspaceName
+        self.remoteURL = worktree.remoteURL
         self.conversations = worktree.conversations.map { ConversationConfig(from: $0) }
         self.activeConversationID = worktree.activeConversationID
     }
@@ -95,6 +101,7 @@ struct WorktreeConfig: Codable {
             prNumber: prNumber,
             isRemote: isRemote ?? false, workspaceName: workspaceName
         )
+        wt.remoteURL = remoteURL
 
         if let convConfigs = conversations, !convConfigs.isEmpty {
             wt.conversations = convConfigs.map { $0.toConversation() }

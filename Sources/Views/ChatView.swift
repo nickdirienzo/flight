@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 // Groups consecutive messages into display sections
 enum ChatSection: Identifiable {
@@ -213,6 +214,17 @@ struct ChatView: View {
                 }
                 .buttonStyle(.plain)
                 .help("Open remote session in Terminal (Cmd+Shift+R)")
+            }
+            if let urlString = worktree.remoteURL, let url = URL(string: urlString) {
+                Button {
+                    NSWorkspace.shared.open(url)
+                } label: {
+                    Image(systemName: "arrow.up.right.square")
+                        .font(.system(size: 12))
+                        .foregroundStyle(theme.secondaryText)
+                }
+                .buttonStyle(.plain)
+                .help("Open \(urlString)")
             }
             Spacer()
             Text(headerStatusLabel)

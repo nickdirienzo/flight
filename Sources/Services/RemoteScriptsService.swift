@@ -83,6 +83,21 @@ enum RemoteScriptsService {
         flightScriptPath(lifecycle, project: project) != nil
     }
 
+    /// Parses a single provision stdout line looking for the reserved
+    /// metadata prefix `FLIGHT_OUTPUT: key=value`. Returns the parsed
+    /// key/value pair when matched, or `nil` for regular progress output.
+    /// Caller should suppress matched lines from the UI stream.
+    static func parseFlightOutput(_ line: String) -> (key: String, value: String)? {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard trimmed.hasPrefix("FLIGHT_OUTPUT:") else { return nil }
+        let body = trimmed.dropFirst("FLIGHT_OUTPUT:".count).trimmingCharacters(in: .whitespaces)
+        guard let eq = body.firstIndex(of: "=") else { return nil }
+        let key = body[..<eq].trimmingCharacters(in: .whitespaces)
+        let value = String(body[body.index(after: eq)...])
+        guard !key.isEmpty else { return nil }
+        return (String(key), value)
+    }
+
     // MARK: - Private
 
     private static func environment(
