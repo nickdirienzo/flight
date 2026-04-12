@@ -1,4 +1,5 @@
 import SwiftUI
+import FlightCore
 
 struct MessageView: View, Equatable {
     let message: AgentMessage

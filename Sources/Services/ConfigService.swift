@@ -1,4 +1,5 @@
 import Foundation
+import FlightCore
 
 /// Settings-level override of the `.flight/<lifecycle>` scripts in a
 /// repo. Each field is a shell command string (not a template — no
