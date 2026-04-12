@@ -46,13 +46,9 @@ struct ContentView: View {
         } message: {
             Text(state.errorMessage ?? "An unknown error occurred.")
         }
-        .fileImporter(
-            isPresented: $state.showingAddRepo,
-            allowedContentTypes: [.folder]
-        ) { result in
-            if case .success(let url) = result {
-                state.addProject(path: url.path)
-            }
+        .sheet(isPresented: $state.showingAddProjectSheet) {
+            AddProjectSheet(state: state)
+                .environment(\.theme, theme)
         }
         .sheet(isPresented: $state.showingRemotePrompt) {
             RemotePromptSheet(state: state)

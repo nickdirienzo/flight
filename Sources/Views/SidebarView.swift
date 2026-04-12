@@ -11,7 +11,7 @@ struct SidebarView: View {
                     ForEach(state.projects) { project in
                         // Project header
                         HStack {
-                            Image(systemName: "folder")
+                            Image(systemName: project.isRemoteOnly ? "cloud" : "folder")
                                 .font(.system(size: 11))
                             Text(project.name)
                                 .font(.system(size: 12, weight: .semibold))
@@ -21,7 +21,11 @@ struct SidebarView: View {
                                 .foregroundStyle(theme.secondaryText)
                                 .onTapGesture {
                                     state.selectedProjectID = project.id
-                                    if NSEvent.modifierFlags.contains(.shift) && project.hasRemoteMode {
+                                    // Remote-only projects have no local clone, so
+                                    // the + always means "new remote worktree".
+                                    let wantRemote = project.isRemoteOnly
+                                        || (NSEvent.modifierFlags.contains(.shift) && project.hasRemoteMode)
+                                    if wantRemote {
                                         state.showingRemotePrompt = true
                                     } else {
                                         Task { await state.createWorktreeWithRandomName() }
@@ -65,9 +69,9 @@ struct SidebarView: View {
             Divider()
 
             Button {
-                state.showingAddRepo = true
+                state.showingAddProjectSheet = true
             } label: {
-                Label("Add Repo", systemImage: "plus")
+                Label("Add Project", systemImage: "plus")
                     .font(.system(size: 12))
                     .foregroundStyle(theme.text)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -80,13 +84,6 @@ struct SidebarView: View {
 
     @ViewBuilder
     private func worktreeContextMenu(worktree: Worktree) -> some View {
-        if worktree.prNumber == nil,
-           let project = state.projects.first(where: { $0.worktrees.contains { $0.id == worktree.id } }),
-           project.forgeConfig != nil {
-            Button("Create PR") {
-                Task { await state.createPR(for: worktree) }
-            }
-        }
         if let conv = worktree.activeConversation {
             if conv.agent?.isRunning == true {
                 Button("Stop Agent") {

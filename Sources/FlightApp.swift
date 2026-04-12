@@ -34,14 +34,14 @@ struct FlightApp: App {
                 Button("New Worktree") {
                     state.presentProjectPicker(
                         title: "New Worktree",
-                        candidates: state.projects
+                        candidates: state.projectsWithLocalClone
                     ) { project in
                         state.selectedProjectID = project.id
                         Task { await state.createWorktreeWithRandomName() }
                     }
                 }
                 .keyboardShortcut("n", modifiers: .command)
-                .disabled(state.projects.isEmpty)
+                .disabled(state.projectsWithLocalClone.isEmpty)
 
                 Button("New Remote Worktree...") {
                     state.presentProjectPicker(

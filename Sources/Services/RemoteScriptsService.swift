@@ -24,24 +24,28 @@ struct ResolvedRemoteCommand {
 
 /// Resolves the shell command to run for a remote-mode lifecycle stage.
 ///
-/// Two sources are supported, in precedence order:
-///   1. `project.remoteMode?.X` — a shell command string from settings.
-///   2. `<project.path>/.flight/<lifecycle>` — an executable script in
-///      the repo.
+/// Script sources vary by project type:
 ///
-/// Both are invoked through `/bin/zsh -l -c` with the following contract:
+/// **Local projects** (have a local clone):
+///   1. `project.remoteMode?.X` — a settings-level template string
+///      (prototype locally without committing to the repo).
+///   2. `<project.path>/.flight/<lifecycle>` — an executable script
+///      committed to the repo.
 ///
-/// - `provision`: `FLIGHT_BRANCH` is set in the env. The command is
-///    expected to stream progress to stdout and print the created
-///    workspace name as the last line.
-/// - `connect`: `FLIGHT_WORKSPACE` is set. The command is a *wrapper*
-///    that runs its `$@` on the remote workspace (think: `ssh`-like).
-///    Flight appends the remote command as positional args when invoking.
+/// **Remote-only projects** (no local clone):
+///   - `~/flight/remote-scripts/<name>/<lifecycle>` — fetched from the
+///     repo's `.flight/` directory at project-add time. No settings
+///     overrides: the source of truth is whatever the repo ships.
+///
+/// All variants are invoked through `/bin/zsh -l -c` with this contract:
+///
+/// - `provision`: `FLIGHT_BRANCH` is set. Streams progress to stdout;
+///    the last non-metadata line is the workspace name.
+/// - `connect`: `FLIGHT_WORKSPACE` is set. Wrapper that runs `$@` on the
+///    remote workspace (ssh-like). Flight appends the remote command as
+///    positional args when invoking.
 /// - `teardown`: `FLIGHT_WORKSPACE` is set. No `$@`.
 /// - `list`: no env vars, no `$@`. Prints one workspace name per line.
-///
-/// Settings wins over `.flight/` so users can prototype or override
-/// locally without committing changes to the repo.
 enum RemoteScriptsService {
     static func resolve(
         _ lifecycle: RemoteLifecycle,
@@ -50,24 +54,57 @@ enum RemoteScriptsService {
         workspace: String? = nil
     ) -> ResolvedRemoteCommand? {
         let env = environment(for: lifecycle, branch: branch, workspace: workspace)
+        // Remote-only projects have no local path, so we fall back to a
+        // stable cwd under ~/flight. Scripts there must not assume they're
+        // running inside a repo.
+        let cwd = project.path ?? ConfigService.flightHomeURL.path
+
+        // Remote-only: use the fetched scripts under
+        // ~/flight/remote-scripts/<name>/. No settings overrides — the
+        // repo is the source of truth.
+        if project.isRemoteOnly {
+            if let scriptPath = cachedScriptPath(lifecycle, projectName: project.name) {
+                return ResolvedRemoteCommand(
+                    command: "\(shellQuote(scriptPath)) \"$@\"",
+                    environment: env,
+                    workingDirectory: cwd
+                )
+            }
+            return nil
+        }
+
+        // Local: settings template wins over committed .flight/<lifecycle>.
         if let template = settingsTemplate(lifecycle, project: project) {
             return ResolvedRemoteCommand(
                 command: template,
                 environment: env,
-                workingDirectory: project.path
+                workingDirectory: cwd
             )
         }
         if let scriptPath = flightScriptPath(lifecycle, project: project) {
             return ResolvedRemoteCommand(
                 command: "\(shellQuote(scriptPath)) \"$@\"",
                 environment: env,
-                workingDirectory: project.path
+                workingDirectory: cwd
             )
         }
         return nil
     }
 
+    private static func cachedScriptPath(
+        _ lifecycle: RemoteLifecycle,
+        projectName: String
+    ) -> String? {
+        let path = RemoteScriptFetcher.cacheDirectory(for: projectName)
+            .appendingPathComponent(lifecycle.rawValue)
+            .path
+        return FileManager.default.fileExists(atPath: path) ? path : nil
+    }
+
     static func isAvailable(_ lifecycle: RemoteLifecycle, project: Project) -> Bool {
+        if project.isRemoteOnly {
+            return cachedScriptPath(lifecycle, projectName: project.name) != nil
+        }
         if settingsTemplate(lifecycle, project: project) != nil { return true }
         return flightScriptPath(lifecycle, project: project) != nil
     }
@@ -139,7 +176,9 @@ enum RemoteScriptsService {
         _ lifecycle: RemoteLifecycle,
         project: Project
     ) -> String? {
-        let path = URL(fileURLWithPath: project.path)
+        // No local clone → no `.flight/` directory to look in.
+        guard let projectPath = project.path else { return nil }
+        let path = URL(fileURLWithPath: projectPath)
             .appendingPathComponent(".flight")
             .appendingPathComponent(lifecycle.rawValue)
             .path

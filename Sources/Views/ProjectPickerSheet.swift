@@ -17,7 +17,7 @@ struct ProjectPickerSheet: View {
         guard !trimmed.isEmpty else { return state.projectPickerCandidates }
         return state.projectPickerCandidates.filter { project in
             project.name.lowercased().contains(trimmed)
-                || project.path.lowercased().contains(trimmed)
+                || (project.path?.lowercased().contains(trimmed) ?? false)
         }
     }
 
@@ -98,11 +98,12 @@ struct ProjectPickerSheet: View {
 
     private func row(for project: Project, index: Int) -> some View {
         let isSelected = index == selectedIndex
+        let subtitle = project.path ?? "remote-only"
         return VStack(alignment: .leading, spacing: 2) {
             Text(project.name)
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(isSelected ? Color.white : theme.text)
-            Text(project.path)
+            Text(subtitle)
                 .font(.system(size: 11))
                 .foregroundStyle(isSelected ? Color.white.opacity(0.8) : theme.secondaryText)
                 .lineLimit(1)

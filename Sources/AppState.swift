@@ -11,7 +11,7 @@ final class AppState {
     var selectedWorktreeID: String?
 
     // Dialogs
-    var showingAddRepo = false
+    var showingAddProjectSheet = false
     var showingRemotePrompt = false
     var remoteInitialPrompt = ""
     var errorMessage: String?
@@ -89,6 +89,12 @@ final class AppState {
         projects.filter(\.hasRemoteMode)
     }
 
+    /// Projects with a local clone on this machine. Remote-only projects
+    /// are excluded — they can't host local worktrees.
+    var projectsWithLocalClone: [Project] {
+        projects.filter { $0.path != nil }
+    }
+
     /// Presents the generic project picker for disambiguation. When there
     /// are 0 candidates this is a no-op; when there is exactly 1 it skips
     /// the picker entirely and runs `onSelect` immediately so single-project
@@ -111,9 +117,26 @@ final class AppState {
 
     // MARK: - Project Management
 
-    func addProject(path: String) {
-        guard !projects.contains(where: { $0.path == path }) else { return }
-        let project = Project(path: path)
+    enum AddProjectError: LocalizedError {
+        case nameTaken(String)
+        var errorDescription: String? {
+            switch self {
+            case .nameTaken(let name):
+                return "A project named \(name) already exists. Pick a different name."
+            }
+        }
+    }
+
+    /// Adds a local project at `path`. `name` defaults to the folder's
+    /// basename; callers should pass an explicit name when the basename
+    /// collides with an existing project (e.g. a local `mirage` alongside
+    /// a remote-only `mirage`).
+    func addProject(path: String, name: String? = nil) throws {
+        let resolvedName = name ?? URL(fileURLWithPath: path).lastPathComponent
+        guard !projects.contains(where: { $0.name == resolvedName }) else {
+            throw AddProjectError.nameTaken(resolvedName)
+        }
+        let project = Project(name: resolvedName, path: path)
         projects.append(project)
         selectedProjectID = project.id
         saveConfig()
@@ -122,6 +145,27 @@ final class AppState {
         Task {
             await detectForge(for: project)
         }
+    }
+
+    /// Adds a project with no local clone. Fetches the repo's committed
+    /// `.flight/` scripts via the forge API and caches them under
+    /// `~/flight/remote-scripts/<name>/` — those are what Flight runs to
+    /// provision/connect/teardown remote workspaces. Throws if the fetch
+    /// fails (e.g. missing scripts, auth, network) so the user gets
+    /// immediate feedback rather than a confusing failure later.
+    func addRemoteOnlyProject(name: String, forge: ForgeConfig) async throws {
+        guard !projects.contains(where: { $0.name == name }) else {
+            throw ForgeError.apiError("A project named \(name) already exists.")
+        }
+        try await RemoteScriptFetcher.fetchAll(forge: forge, projectName: name)
+        let project = Project(
+            name: name,
+            path: nil,
+            forgeConfig: forge
+        )
+        projects.append(project)
+        selectedProjectID = project.id
+        saveConfig()
     }
 
     func reloadConfig() {
@@ -165,6 +209,13 @@ final class AppState {
 
     func createWorktree(branch: String) async {
         guard let project = selectedProject ?? projects.first else { return }
+        // Local worktrees are meaningless for remote-only projects — the UI
+        // won't offer Cmd+N on them, but guard anyway so a stray call here
+        // doesn't crash on the force-unwrap below.
+        guard let projectPath = project.path else {
+            showError("This project has no local clone — use a remote worktree (Cmd+Shift+N).")
+            return
+        }
         let wtPath = ConfigService.worktreePath(repoName: project.name, branch: branch)
 
         // Optimistic: show worktree immediately with "creating" status.
@@ -178,7 +229,7 @@ final class AppState {
 
         do {
             try await GitService.createWorktree(
-                repoPath: project.path,
+                repoPath: projectPath,
                 branch: branch,
                 worktreePath: wtPath
             )
@@ -308,7 +359,7 @@ final class AppState {
                 }
                 let output = try await ShellService.runStreaming(
                     resolvedProvision.command,
-                    in: resolvedProvision.workingDirectory ?? project.path,
+                    in: resolvedProvision.workingDirectory,
                     environment: resolvedProvision.environment
                 ) { [weak conversation, weak worktree] line in
                     // Reserved `FLIGHT_OUTPUT: key=value` lines are metadata,
@@ -421,10 +472,10 @@ final class AppState {
                     showError("Teardown failed for \(workspaceName): \(error.localizedDescription). The remote workspace may still exist on the host — verify and clean up manually if needed.")
                 }
             }
-        } else {
+        } else if let projectPath = project.path {
             do {
                 try await GitService.removeWorktree(
-                    repoPath: project.path,
+                    repoPath: projectPath,
                     worktreePath: worktree.path,
                     branch: worktree.branch
                 )
@@ -588,28 +639,6 @@ final class AppState {
 
     // MARK: - Forge Integration (PRs, CI)
 
-    func createPR(for worktree: Worktree) async {
-        guard let project = projectForWorktree(worktree),
-              let forge = project.forgeProvider else {
-            showError(ForgeError.noForgeConfigured.localizedDescription)
-            return
-        }
-
-        do {
-            let prNumber = try await forge.createPR(
-                in: worktree.path,
-                branch: worktree.branch
-            )
-            worktree.prNumber = prNumber
-            saveConfig()
-
-            // Immediately check CI
-            await checkCI(for: worktree)
-        } catch {
-            showError(error.localizedDescription)
-        }
-    }
-
     func checkCI(for worktree: Worktree) async {
         guard let prNumber = worktree.prNumber,
               let project = projectForWorktree(worktree),
@@ -618,13 +647,10 @@ final class AppState {
             return
         }
 
-        ciLog.info("[checkCI] running for PR #\(prNumber) on \(project.name) (path: \(project.path))")
+        ciLog.info("[checkCI] running for PR #\(prNumber) on \(project.name)")
 
         do {
-            let checks = try await forge.getChecks(
-                prNumber: prNumber,
-                repoPath: project.path
-            )
+            let checks = try await forge.getChecks(prNumber: prNumber)
             worktree.ciStatus = CIStatus(checks: checks)
             ciLog.info("[checkCI] checks: \(checks.count) results")
 
@@ -635,7 +661,7 @@ final class AppState {
                 worktree.ciLogsFetching = true
                 Task {
                     defer { Task { @MainActor in worktree.ciLogsFetching = false } }
-                    await fetchCILogs(for: worktree, prNumber: prNumber, repoPath: project.path, forge: forge)
+                    await fetchCILogs(for: worktree, prNumber: prNumber)
                 }
             }
         } catch {
@@ -643,10 +669,7 @@ final class AppState {
         }
 
         do {
-            let status = try await forge.getPRStatus(
-                prNumber: prNumber,
-                repoPath: project.path
-            )
+            let status = try await forge.getPRStatus(prNumber: prNumber)
             worktree.prStatus = status
             ciLog.info("[checkCI] prStatus: decision=\(status.reviewDecision ?? "nil"), reviews=\(status.reviews.count)")
         } catch {
@@ -654,7 +677,7 @@ final class AppState {
         }
     }
 
-    private func fetchCILogs(for worktree: Worktree, prNumber: Int, repoPath: String, forge: ForgeProvider) async {
+    private func fetchCILogs(for worktree: Worktree, prNumber: Int) async {
         let failedChecks = worktree.ciStatus?.checks.filter { $0.state == "FAILURE" } ?? []
         ciLog.info("[fetchCILogs] \(failedChecks.count) failed checks, links: \(failedChecks.map { "\($0.name): \($0.link ?? "nil")" })")
         guard !failedChecks.isEmpty else { return }
@@ -683,9 +706,11 @@ final class AppState {
                 group.addTask {
                     ciLog.info("[fetchCILogs] fetching job \(jobId) for \(checkName)")
                     do {
+                        // `gh api` with an explicit repo path doesn't need a
+                        // cwd inside a checkout, so this works for both
+                        // local and remote-only projects.
                         let logs = try await ShellService.run(
-                            "timeout 15 gh api repos/\(owner)/\(repo)/actions/jobs/\(jobId)/logs",
-                            in: repoPath
+                            "timeout 15 gh api repos/\(owner)/\(repo)/actions/jobs/\(jobId)/logs"
                         )
                         let safeName = checkName.replacingOccurrences(of: " ", with: "-")
                             .replacingOccurrences(of: "/", with: "-")
@@ -723,10 +748,7 @@ final class AppState {
               let conversation = worktree.activeConversation else { return }
 
         do {
-            let logs = try await forge.getFailedLogs(
-                prNumber: prNumber,
-                repoPath: project.path
-            )
+            let logs = try await forge.getFailedLogs(prNumber: prNumber)
             let message = "CI failed with these errors:\n\n\(logs)\n\nPlease fix."
             sendMessage(message, to: worktree, conversation: conversation)
         } catch {
@@ -909,7 +931,11 @@ final class AppState {
     // MARK: - Private
 
     private func detectForge(for project: Project) async {
-        if let detected = await ForgeType.detect(inRepo: project.path) {
+        // Auto-detection requires reading the `origin` remote from a local
+        // checkout. Remote-only projects must set forgeConfig explicitly at
+        // add-time.
+        guard let projectPath = project.path else { return }
+        if let detected = await ForgeType.detect(inRepo: projectPath) {
             project.forgeConfig = ForgeConfig(type: detected)
             saveConfig()
         }
@@ -955,7 +981,7 @@ final class AppState {
     private func discoverPR(for worktree: Worktree) async {
         guard let project = projectForWorktree(worktree),
               let forge = project.forgeProvider else { return }
-        if let number = await forge.getPRNumber(branch: worktree.branch, repoPath: worktree.path) {
+        if let number = await forge.getPRNumber(branch: worktree.branch) {
             worktree.prNumber = number
             saveConfig()
             await checkCI(for: worktree)

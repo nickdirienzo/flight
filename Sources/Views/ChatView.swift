@@ -213,7 +213,7 @@ struct ChatView: View {
                         .foregroundStyle(theme.secondaryText)
                 }
                 .buttonStyle(.plain)
-                .help("Open remote session in Terminal (Cmd+Shift+R)")
+                .tooltip("Open remote session in Terminal (⌘⇧R)")
             }
             if let urlString = worktree.remoteURL, let url = URL(string: urlString) {
                 Button {
@@ -224,7 +224,7 @@ struct ChatView: View {
                         .foregroundStyle(theme.secondaryText)
                 }
                 .buttonStyle(.plain)
-                .help("Open \(urlString)")
+                .tooltip("Open \(urlString)")
                 .contextMenu {
                     Button("Open in Browser") {
                         NSWorkspace.shared.open(url)
@@ -245,7 +245,7 @@ struct ChatView: View {
                         .foregroundStyle(theme.secondaryText)
                 }
                 .buttonStyle(.plain)
-                .help("Open in VS Code")
+                .tooltip("Open in VS Code")
             }
             Spacer()
             Text(headerStatusLabel)
@@ -312,6 +312,30 @@ struct ChatView: View {
         return !worktree.path.isEmpty
     }
 
+}
+
+// MARK: - Tooltip
+
+/// SwiftUI's `.help()` modifier doesn't reliably show on macOS for
+/// buttons inside `.buttonStyle(.plain)`. Drop to AppKit's `toolTip`
+/// directly via a background NSView — that's the underlying mechanism
+/// `.help()` was supposed to use, and it actually works.
+private struct TooltipAccessory: NSViewRepresentable {
+    let text: String
+    func makeNSView(context: Context) -> NSView {
+        let v = NSView()
+        v.toolTip = text
+        return v
+    }
+    func updateNSView(_ nsView: NSView, context: Context) {
+        nsView.toolTip = text
+    }
+}
+
+extension View {
+    func tooltip(_ text: String) -> some View {
+        background(TooltipAccessory(text: text))
+    }
 }
 
 // MARK: - Chat Message List (isolated observation scope)

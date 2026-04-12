@@ -14,7 +14,10 @@ enum WorktreeSetupService {
         if let script = project.setupScript?.trimmingCharacters(in: .whitespacesAndNewlines), !script.isEmpty {
             return true
         }
-        let sourcePath = URL(fileURLWithPath: project.path)
+        // Remote-only projects have no local clone, so no on-disk
+        // `.flight/worktree-setup` to inherit from.
+        guard let projectPath = project.path else { return false }
+        let sourcePath = URL(fileURLWithPath: projectPath)
             .appendingPathComponent(".flight")
             .appendingPathComponent("worktree-setup")
             .path

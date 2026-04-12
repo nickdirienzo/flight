@@ -20,10 +20,15 @@ struct FlightConfig: Codable {
 }
 
 enum ConfigService {
-    private static var configURL: URL {
+    /// Root directory for all Flight state (`~/flight`). Used as a stable
+    /// cwd for remote-only projects that have no local clone.
+    static var flightHomeURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("flight")
-            .appendingPathComponent("config.json")
+    }
+
+    private static var configURL: URL {
+        flightHomeURL.appendingPathComponent("config.json")
     }
 
     static var worktreesBaseURL: URL {
