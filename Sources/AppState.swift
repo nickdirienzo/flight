@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import FlightCore
 import os.log
 
 private let ciLog = Logger(subsystem: "flight", category: "checkCI")

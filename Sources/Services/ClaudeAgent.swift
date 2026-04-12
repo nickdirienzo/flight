@@ -1,4 +1,5 @@
 import Foundation
+import FlightCore
 
 @Observable
 final class ClaudeAgent {
