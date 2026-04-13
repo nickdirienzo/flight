@@ -86,6 +86,7 @@ struct PasteableTextView: NSViewRepresentable {
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
             parent.text = textView.string
+            textView.scrollRangeToVisible(textView.selectedRange())
         }
     }
 }
