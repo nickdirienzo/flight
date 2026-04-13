@@ -26,6 +26,19 @@ struct InputBarView: View {
         conversation?.planMode ?? false
     }
 
+    private var selectedModelID: String? {
+        conversation?.modelID
+    }
+
+    private var selectedModelLabel: String? {
+        guard let id = selectedModelID else { return nil }
+        return ModelCatalog.label(forID: id)
+    }
+
+    private var selectedEffort: ConversationEffort? {
+        conversation?.effort
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             // Plan mode bar
@@ -50,6 +63,9 @@ struct InputBarView: View {
                     )
                 }
                 .buttonStyle(.plain)
+
+                modelMenu
+                effortMenu
 
                 Spacer()
 
@@ -156,6 +172,100 @@ struct InputBarView: View {
 
     private var isRemoteSessionActive: Bool {
         conversation?.remoteSessionActive ?? false
+    }
+
+    private var modelMenu: some View {
+        Menu {
+            Button {
+                conversation?.modelID = nil
+            } label: {
+                if selectedModelID == nil {
+                    Label("Default", systemImage: "checkmark")
+                } else {
+                    Text("Default")
+                }
+            }
+            Divider()
+            ForEach(ModelCatalog.families) { family in
+                Menu(family.label) {
+                    ForEach(family.entries) { entry in
+                        Button {
+                            conversation?.modelID = entry.id
+                        } label: {
+                            if selectedModelID == entry.id {
+                                Label(entry.label, systemImage: "checkmark")
+                            } else {
+                                Text(entry.label)
+                            }
+                        }
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "cpu")
+                    .font(.system(size: 11))
+                Text(selectedModelLabel ?? "Model")
+                    .font(.system(size: 11, weight: .medium))
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(theme.inputBackground)
+            .foregroundStyle(selectedModelID == nil ? theme.secondaryText : theme.text)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(theme.border, lineWidth: 1)
+            )
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+    }
+
+    private var effortMenu: some View {
+        Menu {
+            Button {
+                conversation?.effort = nil
+            } label: {
+                if selectedEffort == nil {
+                    Label("Default", systemImage: "checkmark")
+                } else {
+                    Text("Default")
+                }
+            }
+            Divider()
+            ForEach(ConversationEffort.allCases) { level in
+                Button {
+                    conversation?.effort = level
+                } label: {
+                    if selectedEffort == level {
+                        Label(level.label, systemImage: "checkmark")
+                    } else {
+                        Text(level.label)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "brain")
+                    .font(.system(size: 11))
+                Text(selectedEffort?.label ?? "Effort")
+                    .font(.system(size: 11, weight: .medium))
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(theme.inputBackground)
+            .foregroundStyle(selectedEffort == nil ? theme.secondaryText : theme.text)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(theme.border, lineWidth: 1)
+            )
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
     }
 
     private var canSend: Bool {

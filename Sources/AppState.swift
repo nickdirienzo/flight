@@ -623,17 +623,19 @@ final class AppState {
 
     func sendMessage(_ text: String, images: [Data] = [], to worktree: Worktree, conversation: Conversation) {
         let planMode = conversation.planMode
+        let model = conversation.modelID
+        let effort = conversation.effort?.rawValue
         guard let agent = conversation.agent, agent.isRunning else {
             // Auto-start agent if not running
             do {
                 try startAgent(for: worktree, conversation: conversation)
-                conversation.agent?.send(message: text, images: images, planMode: planMode)
+                conversation.agent?.send(message: text, images: images, planMode: planMode, model: model, effort: effort)
             } catch {
                 showError(error.localizedDescription)
             }
             return
         }
-        agent.send(message: text, images: images, planMode: planMode)
+        agent.send(message: text, images: images, planMode: planMode, model: model, effort: effort)
     }
 
     func clearChat(for conversation: Conversation) {

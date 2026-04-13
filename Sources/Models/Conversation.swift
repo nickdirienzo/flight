@@ -1,6 +1,23 @@
 import Foundation
 import FlightCore
 
+/// Effort level passed to `claude --effort`. `nil` case defers to the CLI default.
+enum ConversationEffort: String, Codable, CaseIterable, Identifiable {
+    case low
+    case medium
+    case high
+    case max
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .low: return "Low"
+        case .medium: return "Medium"
+        case .high: return "High"
+        case .max: return "Max"
+        }
+    }
+}
+
 @Observable
 final class Conversation: Identifiable {
     let id: UUID
@@ -10,6 +27,9 @@ final class Conversation: Identifiable {
     var sessionID: String?
     var agentBusy: Bool = false
     var planMode: Bool = false
+    /// Raw `claude --model` ID (e.g. "claude-opus-4-6[1m]"). `nil` = CLI default.
+    var modelID: String?
+    var effort: ConversationEffort?
     var agent: ClaudeAgent?
 
     /// True while the session has been handed off to an interactive remote
@@ -61,6 +81,8 @@ struct ConversationConfig: Codable {
     var sessionID: String?
     var remoteSessionActive: Bool?
     var handoffMessageCount: Int?
+    var modelID: String?
+    var effort: ConversationEffort?
 
     init(from conversation: Conversation) {
         self.id = conversation.id
@@ -68,6 +90,8 @@ struct ConversationConfig: Codable {
         self.sessionID = conversation.sessionID
         self.remoteSessionActive = conversation.remoteSessionActive ? true : nil
         self.handoffMessageCount = conversation.handoffMessageCount
+        self.modelID = conversation.modelID
+        self.effort = conversation.effort
     }
 
     func toConversation() -> Conversation {
@@ -75,6 +99,8 @@ struct ConversationConfig: Codable {
         conv.setMessages(ConfigService.loadMessages(conversationID: id))
         conv.remoteSessionActive = remoteSessionActive ?? false
         conv.handoffMessageCount = handoffMessageCount
+        conv.modelID = modelID
+        conv.effort = effort
         return conv
     }
 }

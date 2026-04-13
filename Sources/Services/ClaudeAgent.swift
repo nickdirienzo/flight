@@ -46,7 +46,13 @@ final class ClaudeAgent {
         isRunning = true
     }
 
-    func send(message: String, images: [Data] = [], planMode: Bool = false) {
+    func send(
+        message: String,
+        images: [Data] = [],
+        planMode: Bool = false,
+        model: String? = nil,
+        effort: String? = nil
+    ) {
         // Add user message to the chat locally immediately
         let displayText = images.isEmpty ? message : "\(message)\n[📎 \(images.count) image\(images.count == 1 ? "" : "s") attached]"
         let userMessage = AgentMessage(role: .user, content: .text(displayText))
@@ -59,7 +65,7 @@ final class ClaudeAgent {
             return
         }
 
-        spawnTurn(message: message, images: images, planMode: planMode)
+        spawnTurn(message: message, images: images, planMode: planMode, model: model, effort: effort)
     }
 
     func interrupt() {
@@ -108,7 +114,13 @@ final class ClaudeAgent {
 
     // MARK: - Private
 
-    private func spawnTurn(message: String, images: [Data] = [], planMode: Bool = false) {
+    private func spawnTurn(
+        message: String,
+        images: [Data] = [],
+        planMode: Bool = false,
+        model: String? = nil,
+        effort: String? = nil
+    ) {
         // Clean up previous process
         readTask?.cancel()
         readTask = nil
@@ -153,6 +165,13 @@ final class ClaudeAgent {
 
         if let sessionID {
             claudeArgs += ["--resume", sessionID]
+        }
+
+        if let model, !model.isEmpty {
+            claudeArgs += ["--model", model]
+        }
+        if let effort, !effort.isEmpty {
+            claudeArgs += ["--effort", effort]
         }
 
         if let remoteConnect {
