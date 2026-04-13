@@ -622,17 +622,18 @@ final class AppState {
     }
 
     func sendMessage(_ text: String, images: [Data] = [], to worktree: Worktree, conversation: Conversation) {
+        let planMode = conversation.planMode
         guard let agent = conversation.agent, agent.isRunning else {
             // Auto-start agent if not running
             do {
                 try startAgent(for: worktree, conversation: conversation)
-                conversation.agent?.send(message: text, images: images)
+                conversation.agent?.send(message: text, images: images, planMode: planMode)
             } catch {
                 showError(error.localizedDescription)
             }
             return
         }
-        agent.send(message: text, images: images)
+        agent.send(message: text, images: images, planMode: planMode)
     }
 
     func clearChat(for conversation: Conversation) {

@@ -46,7 +46,7 @@ final class ClaudeAgent {
         isRunning = true
     }
 
-    func send(message: String, images: [Data] = []) {
+    func send(message: String, images: [Data] = [], planMode: Bool = false) {
         // Add user message to the chat locally immediately
         let displayText = images.isEmpty ? message : "\(message)\n[📎 \(images.count) image\(images.count == 1 ? "" : "s") attached]"
         let userMessage = AgentMessage(role: .user, content: .text(displayText))
@@ -59,7 +59,7 @@ final class ClaudeAgent {
             return
         }
 
-        spawnTurn(message: message, images: images)
+        spawnTurn(message: message, images: images, planMode: planMode)
     }
 
     func interrupt() {
@@ -108,7 +108,7 @@ final class ClaudeAgent {
 
     // MARK: - Private
 
-    private func spawnTurn(message: String, images: [Data] = []) {
+    private func spawnTurn(message: String, images: [Data] = [], planMode: Bool = false) {
         // Clean up previous process
         readTask?.cancel()
         readTask = nil
@@ -134,12 +134,15 @@ final class ClaudeAgent {
         if !isRemote {
             claudeArgs += ["--input-format", "stream-json"]
             claudeArgs += ["--allowedTools", "Write,Edit,Read,Glob,Grep,Agent,Task,ToolSearch,Skill,EnterPlanMode,ExitPlanMode,EnterWorktree,ExitWorktree,NotebookEdit,WebSearch,WebFetch,TodoWrite,AskUserQuestion"]
-            claudeArgs += ["--permission-mode", "auto"]
+            claudeArgs += ["--permission-mode", planMode ? "plan" : "auto"]
             // Sandbox: filesystem scoped to cwd (worktree), network domains approved
             // via control_request handler. allowUnsandboxedCommands=false makes the
             // CLI ignore dangerouslyDisableSandbox entirely — no escape hatch.
             let ciLogsDir = ConfigService.worktreesBaseURL.appendingPathComponent("ci-logs").path
             claudeArgs += ["--settings", "{\"sandbox\":{\"enabled\":true,\"autoAllow\":true,\"allowUnsandboxedCommands\":false,\"excludedCommands\":[\"git *\",\"gh *\"],\"filesystem\":{\"allowRead\":[\"\(ciLogsDir)\"]}}}"]
+        } else if planMode {
+            // Plan mode is itself a permission gate — prefer it over skip-permissions.
+            claudeArgs += ["--permission-mode", "plan"]
         } else {
             // Remote workspaces are their own isolation boundary (separate
             // VM), so the local sandbox doesn't apply. Skip permission

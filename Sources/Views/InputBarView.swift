@@ -174,10 +174,6 @@ struct InputBarView: View {
 
         let message = text.isEmpty ? "What's in this image?" : text
 
-        if planMode {
-            state.sendMessage("/plan \(message)", images: images, to: worktree, conversation: conversation)
-        } else {
-            state.sendMessage(message, images: images, to: worktree, conversation: conversation)
-        }
+        state.sendMessage(message, images: images, to: worktree, conversation: conversation)
     }
 }
