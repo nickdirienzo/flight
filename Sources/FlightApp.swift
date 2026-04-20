@@ -43,13 +43,13 @@ struct FlightApp: App {
                 .keyboardShortcut("n", modifiers: .command)
                 .disabled(state.projectsWithLocalClone.isEmpty)
 
-                Button("New Remote Worktree...") {
+                Button("New Remote Worktree") {
                     state.presentProjectPicker(
                         title: "New Remote Worktree",
                         candidates: state.projectsWithRemoteMode
                     ) { project in
                         state.selectedProjectID = project.id
-                        state.showingRemotePrompt = true
+                        state.createRemoteWorktree()
                     }
                 }
                 .keyboardShortcut("n", modifiers: [.command, .shift])

@@ -123,7 +123,7 @@ struct ProjectPickerSheet: View {
         let onSelect = state.projectPickerOnSelect
         closePicker()
         // Defer to next runloop so the sheet fully dismisses before any
-        // follow-up sheet (e.g. RemotePromptSheet) tries to present.
+        // follow-up sheet tries to present.
         DispatchQueue.main.async {
             onSelect?(picked)
         }

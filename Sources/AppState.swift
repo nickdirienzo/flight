@@ -13,8 +13,6 @@ final class AppState {
 
     // Dialogs
     var showingAddProjectSheet = false
-    var showingRemotePrompt = false
-    var remoteInitialPrompt = ""
     var errorMessage: String?
     var showingError = false
 
@@ -278,55 +276,7 @@ final class AppState {
         await createWorktree(branch: "flight/\(adj)-\(noun)-\(suffix)")
     }
 
-    func listRunningWorkspaces() async -> [String] {
-        guard let project = selectedProject ?? projects.first,
-              let resolved = RemoteScriptsService.resolve(.list, project: project) else { return [] }
-        guard let output = try? await ShellService.run(
-            resolved.command,
-            in: resolved.workingDirectory,
-            environment: resolved.environment
-        ) else { return [] }
-        return output.components(separatedBy: "\n").compactMap { line -> String? in
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            return trimmed.isEmpty ? nil : trimmed
-        }
-    }
-
-    func attachToWorkspace(workspaceName: String, initialPrompt: String) {
-        guard let project = selectedProject ?? projects.first else { return }
-        guard let resolvedConnect = RemoteScriptsService.resolve(
-            .connect, project: project, workspace: workspaceName
-        ) else {
-            showError("Remote mode not configured for this project.")
-            return
-        }
-
-        // Generate a unique branch name for this session on the workspace
-        let suffix = String(UUID().uuidString.prefix(4)).lowercased()
-        let branch = "\(workspaceName)/\(suffix)"
-
-        let worktree = Worktree(
-            branch: branch, path: workspaceName,
-            status: .idle, isRemote: true, workspaceName: workspaceName
-        )
-        let conversation = worktree.ensureConversation()
-        project.worktrees.append(worktree)
-        selectedWorktreeID = worktree.id
-
-        saveConfig()
-
-        let connMsg = AgentMessage(role: .system, content: .text("Connecting to \(workspaceName)..."))
-        conversation.appendMessage(connMsg)
-
-        do {
-            try startAgent(for: worktree, conversation: conversation, remoteConnect: resolvedConnect)
-            conversation.agent?.send(message: initialPrompt)
-        } catch {
-            showError("Failed to connect: \(error.localizedDescription)")
-        }
-    }
-
-    func createRemoteWorktree(initialPrompt: String) {
+    func createRemoteWorktree() {
         guard let project = selectedProject ?? projects.first else { return }
         guard RemoteScriptsService.isAvailable(.provision, project: project),
               RemoteScriptsService.isAvailable(.connect, project: project) else {
@@ -406,27 +356,13 @@ final class AppState {
                 let connMsg = AgentMessage(role: .system, content: .text("Workspace \(workspaceName) ready. Connecting agent..."))
                 conversation.appendMessage(connMsg)
 
-                // 4. Start agent with connect wrapper and send initial prompt
+                // 4. Start the agent with the connect wrapper. The user
+                // supplies the first prompt from the regular chat input.
                 try startAgent(for: worktree, conversation: conversation, remoteConnect: resolvedConnect)
 
-                // Notify when first response arrives
-                let previousHandler = conversation.agent?.onBusyChanged
-                conversation.agent?.onBusyChanged = { [weak conversation] busy in
-                    previousHandler?(busy)
-                    if !busy {
-                        NotificationService.send(
-                            title: "Remote Workspace Ready",
-                            body: "\(workspaceName) — first response received"
-                        )
-                        // Restore original handler so we only notify once
-                        conversation?.agent?.onBusyChanged = previousHandler
-                    }
-                }
-
-                conversation.agent?.send(message: initialPrompt)
                 NotificationService.send(
                     title: "Workspace Online",
-                    body: "\(workspaceName) — prompt sent"
+                    body: "\(workspaceName) — ready for input"
                 )
             } catch is CancellationError {
                 // Task was cancelled (app quitting) — remove the incomplete worktree
