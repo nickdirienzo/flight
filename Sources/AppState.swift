@@ -55,7 +55,9 @@ final class AppState {
             let stale = project.worktrees.filter { $0.isRemote && $0.workspaceName == nil }
             if !stale.isEmpty {
                 for wt in stale {
-                    ConfigService.deleteAllChatHistory(for: wt)
+                    for conv in wt.conversations {
+                        FlightEventLog.delete(conversationID: conv.id)
+                    }
                 }
                 project.worktrees.removeAll { $0.isRemote && $0.workspaceName == nil }
                 didClean = true
@@ -239,16 +241,14 @@ final class AppState {
             // before the agent ever spawns, so dependencies are deterministic and
             // the agent's sandbox can keep rejecting dynamic installs.
             if let resolved = WorktreeSetupService.resolveScript(project: project, worktreePath: wtPath) {
-                conversation.appendMessage(
-                    AgentMessage(role: .system, content: .setupLog("Running setup script..."))
-                )
+                appendFlightEvent(.setupLog("Running setup script..."), to: conversation)
                 do {
                     try await WorktreeSetupService.run(
                         scriptContent: resolved.content,
                         in: wtPath
-                    ) { [weak conversation] line in
-                        let msg = AgentMessage(role: .system, content: .setupLog(line))
-                        conversation?.appendMessage(msg)
+                    ) { [weak self, weak conversation] line in
+                        guard let self, let conversation else { return }
+                        self.appendFlightEvent(.setupLog(line), to: conversation)
                     }
                 } catch {
                     // Leave the worktree on disk so the user can inspect/retry.
@@ -312,7 +312,7 @@ final class AppState {
                     resolvedProvision.command,
                     in: resolvedProvision.workingDirectory,
                     environment: resolvedProvision.environment
-                ) { [weak conversation, weak worktree] line in
+                ) { [weak self, weak conversation, weak worktree] line in
                     // Reserved `FLIGHT_OUTPUT: key=value` lines are metadata,
                     // not progress — apply them to the worktree and suppress
                     // them from the displayed log.
@@ -327,8 +327,8 @@ final class AppState {
                         }
                         return
                     }
-                    let msg = AgentMessage(role: .system, content: .provisionLog(line))
-                    conversation?.appendMessage(msg)
+                    guard let self, let conversation else { return }
+                    self.appendFlightEvent(.provisionLog(line), to: conversation)
                 }
 
                 // Workspace name is the last non-metadata, non-empty line.
@@ -353,8 +353,10 @@ final class AppState {
                 saveConfig()
 
                 // 3. Connected!
-                let connMsg = AgentMessage(role: .system, content: .text("Workspace \(workspaceName) ready. Connecting agent..."))
-                conversation.appendMessage(connMsg)
+                appendFlightEvent(
+                    .systemNote("Workspace \(workspaceName) ready. Connecting agent..."),
+                    to: conversation
+                )
 
                 // 4. Start the agent with the connect wrapper. The user
                 // supplies the first prompt from the regular chat input.
@@ -421,7 +423,9 @@ final class AppState {
             }
         }
 
-        ConfigService.deleteAllChatHistory(for: worktree)
+        for conv in worktree.conversations {
+            FlightEventLog.delete(conversationID: conv.id)
+        }
         project.worktrees.removeAll { $0.id == worktree.id }
         if selectedWorktreeID == worktree.id {
             selectedWorktreeID = project.worktrees.first?.id
@@ -441,7 +445,7 @@ final class AppState {
 
     func removeConversation(_ conversation: Conversation, from worktree: Worktree) {
         conversation.agent?.stop()
-        ConfigService.deleteChatHistory(conversationID: conversation.id)
+        FlightEventLog.delete(conversationID: conversation.id)
         worktree.conversations.removeAll { $0.id == conversation.id }
 
         // Select another conversation or create a new one
@@ -484,6 +488,7 @@ final class AppState {
         }
 
         let agent = ClaudeAgent()
+        let conversationIsRemote = worktree.isRemote
         agent.onMessages = { [weak conversation] messages in
             guard let conversation else { return }
             for message in messages {
@@ -493,7 +498,18 @@ final class AppState {
                 }
             }
             conversation.appendMessages(messages)
-            ConfigService.scheduleSaveMessages(conversation.messages, conversationID: conversation.id)
+            // Local sessions persist via claude's own session jsonl, which
+            // ConversationHistory.hydrate merges on reload. Remote sessions
+            // have no accessible local jsonl, so Flight captures each streamed
+            // message into its own event log as a `remoteMessage`.
+            if conversationIsRemote {
+                for message in messages {
+                    FlightEventLog.append(
+                        .remoteMessage(role: message.role, content: message.content),
+                        conversationID: conversation.id
+                    )
+                }
+            }
         }
         agent.onSessionID = { [weak self, weak conversation] sessionID in
             conversation?.sessionID = sessionID
@@ -518,10 +534,12 @@ final class AppState {
     }
 
     func interruptAgent(for conversation: Conversation, in worktree: Worktree) {
+        // Persist the interrupt marker before firing SIGINT. Append-only, so
+        // a late-arriving assistant message (claude finished the turn before
+        // the signal landed) shows up after this marker on next hydrate —
+        // no race, no lost content.
+        appendFlightEvent(.interrupt(), to: conversation)
         conversation.agent?.interrupt()
-        let msg = AgentMessage(role: .system, content: .text("Interrupted"))
-        conversation.appendMessage(msg)
-        ConfigService.saveMessages(conversation.messages, conversationID: conversation.id)
     }
 
     func stopAgent(for conversation: Conversation, in worktree: Worktree) {
@@ -575,8 +593,10 @@ final class AppState {
     }
 
     func clearChat(for conversation: Conversation) {
+        // Write a `clear` marker instead of truncating. Hydrate drops anything
+        // (flight or claude) strictly before the latest marker.
+        FlightEventLog.append(.clear(), conversationID: conversation.id)
         conversation.clearMessages()
-        ConfigService.saveMessages([], conversationID: conversation.id)
     }
 
     // MARK: - Forge Integration (PRs, CI)
@@ -756,8 +776,10 @@ final class AppState {
         let tmuxCmd = "tmux new-session -d -s \(tmuxSession) '\(claudeArgs)'"
 
         if let conversation {
-            let msg = AgentMessage(role: .system, content: .text("Starting remote session on \(workspaceName)..."))
-            conversation.appendMessage(msg)
+            appendFlightEvent(
+                .systemNote("Starting remote session on \(workspaceName)..."),
+                to: conversation
+            )
         }
 
         Task {
@@ -771,9 +793,10 @@ final class AppState {
                 if let conversation {
                     conversation.remoteSessionActive = true
                     conversation.handoffMessageCount = conversation.messages.count
-                    let msg = AgentMessage(role: .system, content: .text("Remote session started — available in Claude Code mobile app"))
-                    conversation.appendMessage(msg)
-                    ConfigService.saveMessages(conversation.messages, conversationID: conversation.id)
+                    appendFlightEvent(
+                        .systemNote("Remote session started — available in Claude Code mobile app"),
+                        to: conversation
+                    )
                     saveConfig()
                 }
             } catch {
@@ -833,28 +856,26 @@ final class AppState {
             if remoteMsgs.count > handoff {
                 let newMsgs = Array(remoteMsgs[handoff...])
 
-                var syncBatch = [AgentMessage(
-                    role: .system,
-                    content: .text("Synced \(newMsgs.count) message\(newMsgs.count == 1 ? "" : "s") from remote session")
-                )]
+                appendFlightEvent(
+                    .systemNote("Synced \(newMsgs.count) message\(newMsgs.count == 1 ? "" : "s") from remote session"),
+                    to: conversation
+                )
                 for msg in newMsgs {
-                    syncBatch.append(
-                        AgentMessage(role: msg.role, content: .text(msg.text))
+                    appendFlightEvent(
+                        .remoteMessage(role: msg.role, content: .text(msg.text)),
+                        to: conversation
                     )
                 }
-                conversation.appendMessages(syncBatch)
             }
         } catch {
-            let msg = AgentMessage(
-                role: .system,
-                content: .text("Could not sync remote session — continuing from last known state")
+            appendFlightEvent(
+                .systemNote("Could not sync remote session — continuing from last known state"),
+                to: conversation
             )
-            conversation.appendMessage(msg)
         }
 
         conversation.remoteSessionActive = false
         conversation.handoffMessageCount = nil
-        ConfigService.saveMessages(conversation.messages, conversationID: conversation.id)
         saveConfig()
     }
 
@@ -870,6 +891,16 @@ final class AppState {
     }
 
     // MARK: - Private
+
+    /// Persist a Flight-owned event and mirror it into the in-memory message
+    /// list so the UI reflects it immediately. The on-disk flight.jsonl stays
+    /// the source of truth on hydrate.
+    private func appendFlightEvent(_ event: FlightEvent, to conversation: Conversation) {
+        FlightEventLog.append(event, conversationID: conversation.id)
+        if let msg = event.toAgentMessage() {
+            conversation.appendMessage(msg)
+        }
+    }
 
     private func detectForge(for project: Project) async {
         // Auto-detection requires reading the `origin` remote from a local

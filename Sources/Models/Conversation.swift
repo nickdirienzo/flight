@@ -96,9 +96,14 @@ struct ConversationConfig: Codable {
         self.effort = conversation.effort
     }
 
-    func toConversation() -> Conversation {
+    func toConversation(worktreePath: String, isRemote: Bool) -> Conversation {
         let conv = Conversation(id: id, name: name, sessionID: sessionID)
-        conv.setMessages(ConfigService.loadMessages(conversationID: id))
+        conv.setMessages(ConversationHistory.hydrate(
+            conversationID: id,
+            worktreePath: worktreePath,
+            sessionID: sessionID,
+            isRemote: isRemote
+        ))
         conv.remoteSessionActive = remoteSessionActive ?? false
         conv.handoffMessageCount = handoffMessageCount
         conv.modelID = modelID

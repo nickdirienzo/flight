@@ -119,7 +119,9 @@ struct WorktreeConfig: Codable {
         wt.remoteSSHTarget = remoteSSHTarget
 
         if let convConfigs = conversations, !convConfigs.isEmpty {
-            wt.conversations = convConfigs.map { $0.toConversation() }
+            wt.conversations = convConfigs.map {
+                $0.toConversation(worktreePath: path, isRemote: isRemote ?? false)
+            }
             wt.activeConversationID = activeConversationID ?? wt.conversations.first?.id
         }
 
