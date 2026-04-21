@@ -16,6 +16,7 @@ enum ConversationHistory {
         sessionID: String?,
         isRemote: Bool
     ) -> [AgentMessage] {
+        migrateLegacyChatFile(conversationID: conversationID, isRemote: isRemote)
         let flightEvents = FlightEventLog.load(conversationID: conversationID)
 
         var claudeMessages: [AgentMessage] = []
@@ -48,5 +49,61 @@ enum ConversationHistory {
         // (e.g. a burst of streamed tool_use blocks with the same epoch).
         merged.sort { $0.timestamp < $1.timestamp }
         return merged
+    }
+
+    /// One-shot conversion from the pre-event-log `chat/<id>.json` snapshot
+    /// format into `flight-events/<id>.jsonl`. Runs at most once per
+    /// conversation (legacy file is deleted after successful backfill).
+    ///
+    /// For **remote** worktrees, every message is preserved as a
+    /// `remoteMessage` event — there's no claude jsonl locally, so this log
+    /// is the only record of the transcript.
+    ///
+    /// For **local** worktrees, we only backfill non-user/non-assistant
+    /// messages (setup logs, provision logs, system notes). Claude's own
+    /// session jsonl already holds user/assistant turns; writing them here
+    /// too would double them on next hydrate.
+    private static func migrateLegacyChatFile(conversationID: UUID, isRemote: Bool) {
+        let legacyURL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("flight")
+            .appendingPathComponent("chat")
+            .appendingPathComponent("\(conversationID.uuidString).json")
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: legacyURL.path) else { return }
+
+        guard let data = try? Data(contentsOf: legacyURL),
+              let messages = try? JSONDecoder().decode([AgentMessage].self, from: data) else {
+            // Leave the file so we can inspect what didn't parse.
+            return
+        }
+
+        for message in messages {
+            guard let event = convertLegacyMessage(message, isRemote: isRemote) else { continue }
+            FlightEventLog.append(event, conversationID: conversationID)
+        }
+        try? fm.removeItem(at: legacyURL)
+    }
+
+    private static func convertLegacyMessage(_ message: AgentMessage, isRemote: Bool) -> FlightEvent? {
+        switch (message.role, message.content) {
+        case (.system, .setupLog(let text)):
+            return FlightEvent(id: message.id, timestamp: message.timestamp, kind: .setupLog, text: text, role: nil, content: nil)
+        case (.system, .provisionLog(let text)):
+            return FlightEvent(id: message.id, timestamp: message.timestamp, kind: .provisionLog, text: text, role: nil, content: nil)
+        case (.system, .text(let text)):
+            // Surface the old "Interrupted" system marker as the real thing.
+            if text == "Interrupted" {
+                return FlightEvent(id: message.id, timestamp: message.timestamp, kind: .interrupt, text: nil, role: nil, content: nil)
+            }
+            return FlightEvent(id: message.id, timestamp: message.timestamp, kind: .systemNote, text: text, role: nil, content: nil)
+        case (.system, .permissionRequest):
+            // Ephemeral approval prompts — not worth persisting.
+            return nil
+        case (.user, _), (.assistant, _):
+            guard isRemote else { return nil }
+            return FlightEvent(id: message.id, timestamp: message.timestamp, kind: .remoteMessage, text: nil, role: message.role, content: message.content)
+        default:
+            return nil
+        }
     }
 }
