@@ -20,6 +20,14 @@ enum ConversationEffort: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+/// A message the user submitted before the worktree finished provisioning.
+/// Held on the conversation until the real (possibly remote) agent spawns,
+/// then flushed through `agent.send`.
+struct PendingSend {
+    let text: String
+    let images: [Data]
+}
+
 @Observable
 final class Conversation: Identifiable {
     let id: UUID
@@ -33,6 +41,7 @@ final class Conversation: Identifiable {
     var modelID: String?
     var effort: ConversationEffort?
     var agent: ClaudeAgent?
+    var pendingSend: PendingSend?
 
     /// True while the session has been handed off to an interactive remote
     /// `claude` process (visible in the mobile app). Flight should sync the

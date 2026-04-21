@@ -260,6 +260,7 @@ final class AppState {
 
             // Auto-start agent
             try startAgent(for: worktree, conversation: conversation)
+            flushPendingSend(for: conversation)
         } catch {
             // Remove the optimistic worktree on failure
             project.worktrees.removeAll { $0.id == worktree.id }
@@ -367,6 +368,7 @@ final class AppState {
                 // 4. Start the agent with the connect wrapper. The user
                 // supplies the first prompt from the regular chat input.
                 try startAgent(for: worktree, conversation: conversation, remoteConnect: resolvedConnect)
+                flushPendingSend(for: conversation)
 
                 NotificationService.send(
                     title: "Workspace Online",
@@ -585,6 +587,19 @@ final class AppState {
         let planMode = conversation.planMode
         let model = conversation.modelID
         let effort = conversation.effort?.rawValue
+
+        // Worktree still provisioning: queue the message. startAgent during
+        // this window would spawn a *local* claude (remote workspaceName is
+        // nil, so the connect wrapper can't resolve) and run it against a
+        // blank cwd — exactly the bug we're guarding against. The create
+        // task calls flushPendingSend after the real agent is up.
+        if worktree.status == .creating {
+            let displayText = images.isEmpty ? text : "\(text)\n[📎 \(images.count) image\(images.count == 1 ? "" : "s") attached]"
+            conversation.appendMessage(AgentMessage(role: .user, content: .text(displayText)))
+            conversation.pendingSend = PendingSend(text: text, images: images)
+            return
+        }
+
         guard let agent = conversation.agent, agent.isRunning else {
             // Auto-start agent if not running
             do {
@@ -596,6 +611,23 @@ final class AppState {
             return
         }
         agent.send(message: text, images: images, planMode: planMode, model: model, effort: effort)
+    }
+
+    /// Flush a message the user queued while the worktree was still
+    /// provisioning. `skipUserEcho` is true because the user bubble was
+    /// already appended at queue time.
+    private func flushPendingSend(for conversation: Conversation) {
+        guard let pending = conversation.pendingSend,
+              let agent = conversation.agent else { return }
+        conversation.pendingSend = nil
+        agent.send(
+            message: pending.text,
+            images: pending.images,
+            planMode: conversation.planMode,
+            model: conversation.modelID,
+            effort: conversation.effort?.rawValue,
+            skipUserEcho: true
+        )
     }
 
     func clearChat(for conversation: Conversation) {
