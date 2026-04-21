@@ -49,7 +49,11 @@ struct LocalGitHubForge: ForgeProvider {
         return try parsePRStatus(
             viewOutput: output,
             commentsOutput: try? await ShellService.run(
-                "gh api repos/{owner}/{repo}/pulls/\(prNumber)/comments --jq '.[] | [.user.login, .path, (.line | tostring), .body] | @tsv'",
+                unresolvedThreadsCommand(
+                    prNumber: prNumber,
+                    ownerArg: #"-F owner="$(gh repo view --json owner --jq .owner.login)""#,
+                    nameArg: #"-F name="$(gh repo view --json name --jq .name)""#
+                ),
                 in: repoPath
             )
         )
@@ -112,7 +116,11 @@ struct RemoteGitHubForge: ForgeProvider {
         return try parsePRStatus(
             viewOutput: output,
             commentsOutput: try? await ShellService.run(
-                "gh api repos/\(owner)/\(repo)/pulls/\(prNumber)/comments --jq '.[] | [.user.login, .path, (.line | tostring), .body] | @tsv'"
+                unresolvedThreadsCommand(
+                    prNumber: prNumber,
+                    ownerArg: "-F owner=\(owner)",
+                    nameArg: "-F name=\(repo)"
+                )
             )
         )
     }
@@ -123,6 +131,21 @@ struct RemoteGitHubForge: ForgeProvider {
         ) else { return nil }
         return Int(output.trimmingCharacters(in: .whitespacesAndNewlines))
     }
+}
+
+// Builds a `gh api graphql` invocation that returns tab-separated rows for
+// both issue-level PR comments and inline review-thread comments on threads
+// that have NOT been resolved. The REST `/pulls/:n/comments` endpoint has no
+// `isResolved` field — resolution is a GraphQL-only concept on `reviewThreads`.
+// Rows are `author\tpath\tline\tbody`; issue comments have empty path/line.
+private func unresolvedThreadsCommand(
+    prNumber: Int,
+    ownerArg: String,
+    nameArg: String
+) -> String {
+    let query = #"query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { comments(first: 100) { nodes { author { login } body } } reviewThreads(first: 100) { nodes { isResolved comments(first: 100) { nodes { author { login } body path line } } } } } } }"#
+    let jq = #"(.data.repository.pullRequest.comments.nodes[] | [(.author.login // "unknown"), "", "", .body] | @tsv), (.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false) | .comments.nodes[] | [(.author.login // "unknown"), (.path // ""), ((.line // "") | tostring), .body] | @tsv)"#
+    return "gh api graphql \(ownerArg) \(nameArg) -F number=\(prNumber) -f query='\(query)' --jq '\(jq)'"
 }
 
 // Shared parsing for `gh pr view --json latestReviews,reviewDecision,url`
