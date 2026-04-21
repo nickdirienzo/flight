@@ -54,6 +54,81 @@ final class Project: Identifiable {
         }
         return config.type.makeRemoteProvider(config: config)
     }
+
+    @ObservationIgnored private var _cachedOwnerRepo: (owner: String, repo: String)?
+    @ObservationIgnored private var _ownerRepoResolveAttempted = false
+
+    /// Resolves this project's `(owner, repo)` pair — from `forgeConfig` when
+    /// set, otherwise by shelling out `git remote get-url origin` in the local
+    /// checkout. Cached after first resolve; returns nil when no forge is
+    /// configured or parsing fails.
+    func resolvedOwnerRepo() async -> (owner: String, repo: String)? {
+        if let cached = _cachedOwnerRepo { return cached }
+        if let config = forgeConfig,
+           let owner = config.owner,
+           let repo = config.repo {
+            let pair = (owner, repo)
+            _cachedOwnerRepo = pair
+            return pair
+        }
+        if _ownerRepoResolveAttempted { return nil }
+        _ownerRepoResolveAttempted = true
+        guard let path,
+              let output = try? await ShellService.run("git remote get-url origin", in: path) else {
+            return nil
+        }
+        let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleaned: String
+        if trimmed.contains("@") {
+            cleaned = trimmed.components(separatedBy: ":").last ?? trimmed
+        } else {
+            cleaned = URL(string: trimmed)?.pathComponents.suffix(2).joined(separator: "/") ?? trimmed
+        }
+        let parts = cleaned
+            .replacingOccurrences(of: ".git", with: "")
+            .components(separatedBy: "/")
+            .filter { !$0.isEmpty }
+        guard parts.count >= 2 else { return nil }
+        let pair = (parts[parts.count - 2], parts[parts.count - 1])
+        _cachedOwnerRepo = pair
+        return pair
+    }
+
+    /// Returns the first PR number referenced in `text` that points at this
+    /// project's forge repo. Lets Flight attach a PR created on a renamed
+    /// branch — `gh pr view '<branch>'` can't find those, but the agent
+    /// usually prints the URL in its reply.
+    func extractPRNumber(from text: String) async -> Int? {
+        guard let config = forgeConfig else { return nil }
+        guard let (owner, repo) = await resolvedOwnerRepo() else { return nil }
+
+        let hostPattern: String
+        let pullSegment: String
+        switch config.type {
+        case .github:
+            hostPattern = #"github\.com"#
+            pullSegment = "pull"
+        case .forgejo:
+            guard let baseURL = config.baseURL,
+                  let host = URL(string: baseURL)?.host else { return nil }
+            hostPattern = NSRegularExpression.escapedPattern(for: host)
+            pullSegment = "pulls"
+        }
+
+        let ownerRe = NSRegularExpression.escapedPattern(for: owner)
+        let repoRe = NSRegularExpression.escapedPattern(for: repo)
+        let pattern = "https?://\(hostPattern)/\(ownerRe)/\(repoRe)/\(pullSegment)/(\\d+)"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+            return nil
+        }
+        let range = NSRange(text.startIndex..., in: text)
+        guard let match = regex.firstMatch(in: text, range: range),
+              match.numberOfRanges > 1,
+              let numRange = Range(match.range(at: 1), in: text) else {
+            return nil
+        }
+        return Int(text[numRange])
+    }
 }
 
 struct ProjectConfig: Codable {

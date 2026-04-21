@@ -74,10 +74,18 @@ final class AppState {
             }
         }
 
-        // Fetch PR/CI status immediately for all worktrees with PRs
+        // Fetch PR/CI status immediately so the bar isn't blank until the
+        // 30s polling tick. Worktrees without a known prNumber get
+        // `discoverPR`, which also scans the conversation history — that
+        // catches PRs opened on a renamed branch (where the gh branch
+        // lookup fails).
         Task {
-            for worktree in allWorktrees where worktree.prNumber != nil {
-                await checkCI(for: worktree)
+            for worktree in allWorktrees {
+                if worktree.prNumber != nil {
+                    await checkCI(for: worktree)
+                } else {
+                    await discoverPR(for: worktree)
+                }
             }
         }
     }
@@ -497,7 +505,7 @@ final class AppState {
 
         let agent = ClaudeAgent()
         let conversationIsRemote = worktree.isRemote
-        agent.onMessages = { [weak conversation] messages in
+        agent.onMessages = { [weak self, weak conversation, weak worktree] messages in
             guard let conversation else { return }
             for message in messages {
                 if case .toolUse(let name, _) = message.content {
@@ -516,6 +524,16 @@ final class AppState {
                         .remoteMessage(role: message.role, content: message.content),
                         conversationID: conversation.id
                     )
+                }
+            }
+            if let self, let worktree, worktree.prNumber == nil {
+                let texts = messages.compactMap { msg -> String? in
+                    guard msg.role == .assistant,
+                          case .text(let t) = msg.content else { return nil }
+                    return t
+                }
+                if !texts.isEmpty {
+                    self.scanForPRURL(in: texts, worktree: worktree)
                 }
             }
         }
@@ -999,6 +1017,46 @@ final class AppState {
             worktree.prNumber = number
             saveConfig()
             await checkCI(for: worktree)
+            return
+        }
+        // Branch lookup can miss when the PR was opened from a different
+        // head ref (e.g. the agent renamed the branch before `gh pr create`).
+        // Fall back to scanning the conversation transcripts for a URL that
+        // points at this project's repo.
+        let texts = worktree.conversations.flatMap { conv in
+            conv.messages.compactMap { msg -> String? in
+                guard msg.role == .assistant,
+                      case .text(let t) = msg.content else { return nil }
+                return t
+            }
+        }
+        for text in texts {
+            if let number = await project.extractPRNumber(from: text) {
+                worktree.prNumber = number
+                saveConfig()
+                await checkCI(for: worktree)
+                return
+            }
+        }
+    }
+
+    /// Fires when new assistant text lands — if the worktree doesn't yet have
+    /// a PR attached, try to pull one out of the text so the PR bar shows up
+    /// as soon as the agent prints the URL.
+    private func scanForPRURL(in texts: [String], worktree: Worktree) {
+        Task { [weak self, weak worktree] in
+            guard let self, let worktree, worktree.prNumber == nil,
+                  let project = self.projectForWorktree(worktree) else { return }
+            for text in texts {
+                guard let number = await project.extractPRNumber(from: text) else { continue }
+                await MainActor.run {
+                    guard worktree.prNumber == nil else { return }
+                    worktree.prNumber = number
+                    self.saveConfig()
+                }
+                await self.checkCI(for: worktree)
+                return
+            }
         }
     }
 
