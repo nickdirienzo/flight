@@ -603,7 +603,10 @@ final class AppState {
 
     func sendMessage(_ text: String, images: [Data] = [], to worktree: Worktree, conversation: Conversation) {
         let planMode = conversation.planMode
-        let model = conversation.modelID
+        let model = conversation.modelID ?? {
+            let fallback = UserDefaults.standard.string(forKey: "flightDefaultModel") ?? ""
+            return fallback.isEmpty ? nil : fallback
+        }()
         let effort = conversation.effort?.rawValue
 
         // Worktree still provisioning: queue the message. startAgent during
