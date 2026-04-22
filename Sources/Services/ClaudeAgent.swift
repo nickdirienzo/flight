@@ -97,20 +97,32 @@ final class ClaudeAgent {
     }
 
     func stop() {
-        readTask?.cancel()
-        readTask = nil
         pendingMessages.removeAll()
-        if let process, process.isRunning {
-            process.terminate()
-        }
+        teardownCurrentTurn()
         log("=== Agent stopped at \(Date()) ===")
         try? logHandle?.close()
         logHandle = nil
+        isRunning = false
+        isBusy = false
+    }
+
+    /// Kill the current turn's claude -p and release its pipes. Each turn
+    /// is a fresh `claude -p --resume <sid>` invocation — cheap and coherent
+    /// because the session state lives in the jsonl — but only if we
+    /// actually terminate the old process. Dropping our Swift reference
+    /// alone leaves it alive under launchd (we've seen a dozen pile up for
+    /// one session), and clearing the terminationHandler first prevents its
+    /// late-firing callback from flipping `isBusy` off on the *next* turn.
+    private func teardownCurrentTurn() {
+        readTask?.cancel()
+        if let process, process.isRunning {
+            process.terminationHandler = nil
+            process.terminate()
+        }
+        readTask = nil
         process = nil
         stdinPipe = nil
         stdoutPipe = nil
-        isRunning = false
-        isBusy = false
     }
 
     // MARK: - Private
@@ -122,12 +134,7 @@ final class ClaudeAgent {
         model: String? = nil,
         effort: String? = nil
     ) {
-        // Clean up previous process
-        readTask?.cancel()
-        readTask = nil
-        process = nil
-        stdinPipe = nil
-        stdoutPipe = nil
+        teardownCurrentTurn()
 
         let proc = Process()
         let stdin = Pipe()
