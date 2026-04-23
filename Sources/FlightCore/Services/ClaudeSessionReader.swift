@@ -1,18 +1,17 @@
 import Foundation
-import FlightCore
 
 /// Reads claude's own session jsonl (`~/.claude/projects/<cwd-dashed>/<sessionID>.jsonl`)
 /// and maps the subset of event types Flight renders into AgentMessages with
 /// their original timestamps preserved. Best-effort: unknown types are skipped,
 /// malformed lines are ignored.
-enum ClaudeSessionReader {
+public enum ClaudeSessionReader {
     /// Claude uses the working-dir path with `/` replaced by `-` as the
     /// project folder name.
-    static func projectDirName(forWorktreePath path: String) -> String {
+    public static func projectDirName(forWorktreePath path: String) -> String {
         path.replacingOccurrences(of: "/", with: "-")
     }
 
-    static func sessionFileURL(worktreePath: String, sessionID: String) -> URL {
+    public static func sessionFileURL(worktreePath: String, sessionID: String) -> URL {
         let base = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude")
             .appendingPathComponent("projects")
@@ -20,7 +19,7 @@ enum ClaudeSessionReader {
         return base.appendingPathComponent("\(sessionID).jsonl")
     }
 
-    static func readMessages(worktreePath: String, sessionID: String) -> [AgentMessage] {
+    public static func readMessages(worktreePath: String, sessionID: String) -> [AgentMessage] {
         let url = sessionFileURL(worktreePath: worktreePath, sessionID: sessionID)
         guard let data = try? Data(contentsOf: url),
               let text = String(data: data, encoding: .utf8) else {

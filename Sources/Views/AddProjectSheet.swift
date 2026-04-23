@@ -1,4 +1,5 @@
 import SwiftUI
+import FlightCore
 
 /// Modal shown when the user clicks "Add Project". Two modes:
 ///  - **Local**: pick a git repo directory on disk (existing flow).

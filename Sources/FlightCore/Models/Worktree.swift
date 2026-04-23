@@ -1,6 +1,7 @@
 import Foundation
+import Observation
 
-enum WorktreeStatus: String {
+public enum WorktreeStatus: String {
     case creating
     case idle
     case running
@@ -10,49 +11,49 @@ enum WorktreeStatus: String {
 }
 
 @Observable
-final class Worktree: Identifiable {
-    var id: String { branch }
-    var branch: String
-    var path: String
-    var status: WorktreeStatus
-    var conversations: [Conversation]
-    var activeConversationID: UUID?
-    var prNumber: Int?
-    var ciStatus: CIStatus?
-    var prStatus: PRStatus?
-    var ciLogsPaths: [String: String] = [:]  // check name -> log file path
-    var ciLogsFetching = false
+public final class Worktree: Identifiable {
+    public var id: String { branch }
+    public var branch: String
+    public var path: String
+    public var status: WorktreeStatus
+    public var conversations: [Conversation]
+    public var activeConversationID: UUID?
+    public var prNumber: Int?
+    public var ciStatus: CIStatus?
+    public var prStatus: PRStatus?
+    public var ciLogsPaths: [String: String] = [:]  // check name -> log file path
+    public var ciLogsFetching = false
 
     // Remote mode
-    var isRemote: Bool
-    var workspaceName: String?
+    public var isRemote: Bool
+    public var workspaceName: String?
     /// Optional browser URL for the remote workspace (e.g. a web IDE or
     /// dashboard). Populated from `FLIGHT_OUTPUT: url=...` lines the
     /// provision script emits on stdout.
-    var remoteURL: String?
+    public var remoteURL: String?
     /// Path to the repo checkout on the remote workspace, used to open
     /// the worktree in VS Code Remote-SSH. Populated from
     /// `FLIGHT_OUTPUT: repo_path=...`.
-    var remoteRepoPath: String?
+    public var remoteRepoPath: String?
     /// SSH-Remote target string for VS Code Remote-SSH (the value that
     /// follows `--remote ssh-remote+`). For Coder this is typically
     /// `coder.<workspace>`; for raw SSH it might be `user@host`.
     /// Populated from `FLIGHT_OUTPUT: ssh_target=...`.
-    var remoteSSHTarget: String?
+    public var remoteSSHTarget: String?
 
-    var activeConversation: Conversation? {
+    public var activeConversation: Conversation? {
         conversations.first { $0.id == activeConversationID }
     }
 
-    var anyAgentBusy: Bool {
+    public var anyAgentBusy: Bool {
         conversations.contains { $0.agentBusy }
     }
 
-    var anyAgentRunning: Bool {
+    public var anyAgentRunning: Bool {
         conversations.contains { $0.agent?.isRunning == true }
     }
 
-    init(
+    public init(
         branch: String,
         path: String,
         status: WorktreeStatus = .idle,
@@ -70,7 +71,7 @@ final class Worktree: Identifiable {
     }
 
     @discardableResult
-    func ensureConversation() -> Conversation {
+    public func ensureConversation() -> Conversation {
         if let active = activeConversation { return active }
         if let first = conversations.first {
             activeConversationID = first.id
@@ -83,19 +84,19 @@ final class Worktree: Identifiable {
     }
 }
 
-struct WorktreeConfig: Codable {
-    let branch: String
-    let path: String
-    var prNumber: Int?
-    var isRemote: Bool?
-    var workspaceName: String?
-    var remoteURL: String?
-    var remoteRepoPath: String?
-    var remoteSSHTarget: String?
-    var conversations: [ConversationConfig]?
-    var activeConversationID: UUID?
+public struct WorktreeConfig: Codable {
+    public let branch: String
+    public let path: String
+    public var prNumber: Int?
+    public var isRemote: Bool?
+    public var workspaceName: String?
+    public var remoteURL: String?
+    public var remoteRepoPath: String?
+    public var remoteSSHTarget: String?
+    public var conversations: [ConversationConfig]?
+    public var activeConversationID: UUID?
 
-    init(from worktree: Worktree) {
+    public init(from worktree: Worktree) {
         self.branch = worktree.branch
         self.path = worktree.path
         self.prNumber = worktree.prNumber
@@ -108,7 +109,7 @@ struct WorktreeConfig: Codable {
         self.activeConversationID = worktree.activeConversationID
     }
 
-    func toWorktree() -> Worktree {
+    public func toWorktree() -> Worktree {
         let wt = Worktree(
             branch: branch, path: path,
             prNumber: prNumber,

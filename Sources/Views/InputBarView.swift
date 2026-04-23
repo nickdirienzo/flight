@@ -1,4 +1,5 @@
 import SwiftUI
+import FlightCore
 
 struct ImageAttachment: Identifiable {
     let id = UUID()

@@ -10,19 +10,19 @@ import Foundation
 
 /// Local variant: resolves owner/repo from the `origin` remote of a
 /// checked-out repo. Good for projects where Flight has a local clone.
-struct LocalForgejoForge: ForgeProvider {
-    let displayName = "Forgejo"
-    let repoPath: String
-    let baseURL: String
-    let tokenEnvVar: String
+public struct LocalForgejoForge: ForgeProvider {
+    public let displayName = "Forgejo"
+    public let repoPath: String
+    public let baseURL: String
+    public let tokenEnvVar: String
 
-    init(repoPath: String, baseURL: String, tokenEnvVar: String? = nil) {
+    public init(repoPath: String, baseURL: String, tokenEnvVar: String? = nil) {
         self.repoPath = repoPath
         self.baseURL = baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         self.tokenEnvVar = tokenEnvVar ?? "FORGEJO_TOKEN"
     }
 
-    func getChecks(prNumber: Int) async throws -> [CICheck] {
+    public func getChecks(prNumber: Int) async throws -> [CICheck] {
         let (owner, repo) = try await parseRemote(in: repoPath)
         return try await ForgejoAPI.getChecks(
             prNumber: prNumber, owner: owner, repo: repo,
@@ -30,7 +30,7 @@ struct LocalForgejoForge: ForgeProvider {
         )
     }
 
-    func getFailedLogs(prNumber: Int) async throws -> String {
+    public func getFailedLogs(prNumber: Int) async throws -> String {
         let (owner, repo) = try await parseRemote(in: repoPath)
         return try await ForgejoAPI.getFailedLogs(
             prNumber: prNumber, owner: owner, repo: repo,
@@ -38,7 +38,7 @@ struct LocalForgejoForge: ForgeProvider {
         )
     }
 
-    func getPRStatus(prNumber: Int) async throws -> PRStatus {
+    public func getPRStatus(prNumber: Int) async throws -> PRStatus {
         let (owner, repo) = try await parseRemote(in: repoPath)
         return try await ForgejoAPI.getPRStatus(
             prNumber: prNumber, owner: owner, repo: repo,
@@ -46,7 +46,7 @@ struct LocalForgejoForge: ForgeProvider {
         )
     }
 
-    func getPRNumber(branch: String) async -> Int? {
+    public func getPRNumber(branch: String) async -> Int? {
         guard let (owner, repo) = try? await parseRemote(in: repoPath) else { return nil }
         return await ForgejoAPI.getPRNumber(
             branch: branch, owner: owner, repo: repo,
@@ -80,42 +80,42 @@ struct LocalForgejoForge: ForgeProvider {
 }
 
 /// Remote variant: owner/repo are supplied directly; no local clone required.
-struct RemoteForgejoForge: ForgeProvider {
-    let displayName = "Forgejo"
-    let owner: String
-    let repo: String
-    let baseURL: String
-    let tokenEnvVar: String
+public struct RemoteForgejoForge: ForgeProvider {
+    public let displayName = "Forgejo"
+    public let owner: String
+    public let repo: String
+    public let baseURL: String
+    public let tokenEnvVar: String
 
-    init(owner: String, repo: String, baseURL: String, tokenEnvVar: String? = nil) {
+    public init(owner: String, repo: String, baseURL: String, tokenEnvVar: String? = nil) {
         self.owner = owner
         self.repo = repo
         self.baseURL = baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         self.tokenEnvVar = tokenEnvVar ?? "FORGEJO_TOKEN"
     }
 
-    func getChecks(prNumber: Int) async throws -> [CICheck] {
+    public func getChecks(prNumber: Int) async throws -> [CICheck] {
         try await ForgejoAPI.getChecks(
             prNumber: prNumber, owner: owner, repo: repo,
             baseURL: baseURL, tokenEnvVar: tokenEnvVar
         )
     }
 
-    func getFailedLogs(prNumber: Int) async throws -> String {
+    public func getFailedLogs(prNumber: Int) async throws -> String {
         try await ForgejoAPI.getFailedLogs(
             prNumber: prNumber, owner: owner, repo: repo,
             baseURL: baseURL, tokenEnvVar: tokenEnvVar
         )
     }
 
-    func getPRStatus(prNumber: Int) async throws -> PRStatus {
+    public func getPRStatus(prNumber: Int) async throws -> PRStatus {
         try await ForgejoAPI.getPRStatus(
             prNumber: prNumber, owner: owner, repo: repo,
             baseURL: baseURL, tokenEnvVar: tokenEnvVar
         )
     }
 
-    func getPRNumber(branch: String) async -> Int? {
+    public func getPRNumber(branch: String) async -> Int? {
         await ForgejoAPI.getPRNumber(
             branch: branch, owner: owner, repo: repo,
             baseURL: baseURL, tokenEnvVar: tokenEnvVar

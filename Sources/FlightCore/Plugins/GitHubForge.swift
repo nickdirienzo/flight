@@ -2,11 +2,15 @@ import Foundation
 
 /// GitHub forge backed by the `gh` CLI, running in a local repo checkout.
 /// `gh` uses the cwd to resolve owner/repo from the git remote.
-struct LocalGitHubForge: ForgeProvider {
-    let displayName = "GitHub"
-    let repoPath: String
+public struct LocalGitHubForge: ForgeProvider {
+    public let displayName = "GitHub"
+    public let repoPath: String
 
-    func getChecks(prNumber: Int) async throws -> [CICheck] {
+    public init(repoPath: String) {
+        self.repoPath = repoPath
+    }
+
+    public func getChecks(prNumber: Int) async throws -> [CICheck] {
         let output = try await ShellService.run(
             "gh pr checks \(prNumber) --json name,state,link",
             in: repoPath
@@ -15,7 +19,7 @@ struct LocalGitHubForge: ForgeProvider {
         return (try? JSONDecoder().decode([CICheck].self, from: data)) ?? []
     }
 
-    func getFailedLogs(prNumber: Int) async throws -> String {
+    public func getFailedLogs(prNumber: Int) async throws -> String {
         let checksOutput = try await ShellService.run(
             "gh pr checks \(prNumber) --json name,state,link --jq '.[] | select(.state == \"FAILURE\") | .link'",
             in: repoPath
@@ -41,7 +45,7 @@ struct LocalGitHubForge: ForgeProvider {
         return "Could not determine run ID from CI check URL."
     }
 
-    func getPRStatus(prNumber: Int) async throws -> PRStatus {
+    public func getPRStatus(prNumber: Int) async throws -> PRStatus {
         let output = try await ShellService.run(
             "gh pr view \(prNumber) --json latestReviews,reviewDecision,url",
             in: repoPath
@@ -59,7 +63,7 @@ struct LocalGitHubForge: ForgeProvider {
         )
     }
 
-    func getPRNumber(branch: String) async -> Int? {
+    public func getPRNumber(branch: String) async -> Int? {
         guard let output = try? await ShellService.run(
             "gh pr view '\(branch)' --json number --jq .number",
             in: repoPath
@@ -70,14 +74,19 @@ struct LocalGitHubForge: ForgeProvider {
 
 /// GitHub forge backed by `gh --repo owner/name`, for projects where no
 /// local clone exists. Every call is path-independent and works from any cwd.
-struct RemoteGitHubForge: ForgeProvider {
-    let displayName = "GitHub"
-    let owner: String
-    let repo: String
+public struct RemoteGitHubForge: ForgeProvider {
+    public let displayName = "GitHub"
+    public let owner: String
+    public let repo: String
+
+    public init(owner: String, repo: String) {
+        self.owner = owner
+        self.repo = repo
+    }
 
     private var repoFlag: String { "--repo \(owner)/\(repo)" }
 
-    func getChecks(prNumber: Int) async throws -> [CICheck] {
+    public func getChecks(prNumber: Int) async throws -> [CICheck] {
         let output = try await ShellService.run(
             "gh pr checks \(prNumber) \(repoFlag) --json name,state,link"
         )
@@ -85,7 +94,7 @@ struct RemoteGitHubForge: ForgeProvider {
         return (try? JSONDecoder().decode([CICheck].self, from: data)) ?? []
     }
 
-    func getFailedLogs(prNumber: Int) async throws -> String {
+    public func getFailedLogs(prNumber: Int) async throws -> String {
         let checksOutput = try await ShellService.run(
             "gh pr checks \(prNumber) \(repoFlag) --json name,state,link --jq '.[] | select(.state == \"FAILURE\") | .link'"
         )
@@ -109,7 +118,7 @@ struct RemoteGitHubForge: ForgeProvider {
         return "Could not determine run ID from CI check URL."
     }
 
-    func getPRStatus(prNumber: Int) async throws -> PRStatus {
+    public func getPRStatus(prNumber: Int) async throws -> PRStatus {
         let output = try await ShellService.run(
             "gh pr view \(prNumber) \(repoFlag) --json latestReviews,reviewDecision,url"
         )
@@ -125,7 +134,7 @@ struct RemoteGitHubForge: ForgeProvider {
         )
     }
 
-    func getPRNumber(branch: String) async -> Int? {
+    public func getPRNumber(branch: String) async -> Int? {
         guard let output = try? await ShellService.run(
             "gh pr view '\(branch)' \(repoFlag) --json number --jq .number"
         ) else { return nil }

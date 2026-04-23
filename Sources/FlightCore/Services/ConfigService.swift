@@ -1,5 +1,4 @@
 import Foundation
-import FlightCore
 
 /// Settings-level override of the `.flight/<lifecycle>` scripts in a
 /// repo. Each field is a shell command string (not a template — no
@@ -7,23 +6,34 @@ import FlightCore
 /// vars set: `FLIGHT_BRANCH` for provision, `FLIGHT_WORKSPACE` for
 /// connect/teardown. Connect additionally receives the remote command
 /// as `"$@"`.
-struct RemoteModeConfig: Codable {
-    var provision: String
-    var connect: String
-    var teardown: String
-    var list: String?
+public struct RemoteModeConfig: Codable {
+    public var provision: String
+    public var connect: String
+    public var teardown: String
+    public var list: String?
+
+    public init(provision: String, connect: String, teardown: String, list: String? = nil) {
+        self.provision = provision
+        self.connect = connect
+        self.teardown = teardown
+        self.list = list
+    }
 }
 
-struct FlightConfig: Codable {
-    var projects: [ProjectConfig]
+public struct FlightConfig: Codable {
+    public var projects: [ProjectConfig]
 
-    static let empty = FlightConfig(projects: [])
+    public init(projects: [ProjectConfig]) {
+        self.projects = projects
+    }
+
+    public static let empty = FlightConfig(projects: [])
 }
 
-enum ConfigService {
+public enum ConfigService {
     /// Root directory for all Flight state (`~/flight`). Used as a stable
     /// cwd for remote-only projects that have no local clone.
-    static var flightHomeURL: URL {
+    public static var flightHomeURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("flight")
     }
@@ -32,7 +42,7 @@ enum ConfigService {
         flightHomeURL.appendingPathComponent("config.json")
     }
 
-    static var worktreesBaseURL: URL {
+    public static var worktreesBaseURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("flight")
             .appendingPathComponent("worktrees")
@@ -44,7 +54,7 @@ enum ConfigService {
             .appendingPathComponent("logs")
     }
 
-    static func ensureDirectories() {
+    public static func ensureDirectories() {
         let fm = FileManager.default
         let flightDir = configURL.deletingLastPathComponent()
         try? fm.createDirectory(at: flightDir, withIntermediateDirectories: true)
@@ -52,14 +62,14 @@ enum ConfigService {
         try? fm.createDirectory(at: logsBaseURL, withIntermediateDirectories: true)
     }
 
-    static func logFileURL(repoName: String, branch: String) -> URL {
+    public static func logFileURL(repoName: String, branch: String) -> URL {
         let repoDir = logsBaseURL.appendingPathComponent(repoName)
         try? FileManager.default.createDirectory(at: repoDir, withIntermediateDirectories: true)
         let safeBranch = branch.replacingOccurrences(of: "/", with: "-")
         return repoDir.appendingPathComponent("\(safeBranch).log")
     }
 
-    static func load() -> FlightConfig {
+    public static func load() -> FlightConfig {
         guard let data = try? Data(contentsOf: configURL),
               let config = try? JSONDecoder().decode(FlightConfig.self, from: data) else {
             return .empty
@@ -67,14 +77,14 @@ enum ConfigService {
         return config
     }
 
-    static func save(_ config: FlightConfig) {
+    public static func save(_ config: FlightConfig) {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         guard let data = try? encoder.encode(config) else { return }
         try? data.write(to: configURL, options: .atomic)
     }
 
-    static func worktreePath(repoName: String, branch: String) -> String {
+    public static func worktreePath(repoName: String, branch: String) -> String {
         worktreesBaseURL
             .appendingPathComponent(repoName)
             .appendingPathComponent(branch)

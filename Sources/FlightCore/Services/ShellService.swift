@@ -1,9 +1,9 @@
 import Foundation
 
-enum ShellError: Error, LocalizedError {
+public enum ShellError: Error, LocalizedError {
     case failed(command: String, exitCode: Int32, stderr: String)
 
-    var errorDescription: String? {
+    public var errorDescription: String? {
         switch self {
         case .failed(let command, let exitCode, let stderr):
             return "Command '\(command)' failed (exit \(exitCode)): \(stderr)"
@@ -11,7 +11,7 @@ enum ShellError: Error, LocalizedError {
     }
 }
 
-enum ShellService {
+public enum ShellService {
     /// Merges `overrides` into the current process environment. Used so
     /// callers can inject `FLIGHT_*` vars without blowing away `PATH`, etc.
     private static func mergedEnvironment(_ overrides: [String: String]) -> [String: String] {
@@ -34,7 +34,7 @@ enum ShellService {
     }
 
     @discardableResult
-    static func run(
+    public static func run(
         _ command: String,
         in directory: String? = nil,
         environment: [String: String] = [:],
@@ -86,7 +86,7 @@ enum ShellService {
     /// Run a command and stream stdout lines via a callback. Returns the full stdout on completion.
     /// Supports Swift Task cancellation — the process is terminated if the calling task is cancelled.
     @discardableResult
-    static func runStreaming(
+    public static func runStreaming(
         _ command: String,
         in directory: String? = nil,
         environment: [String: String] = [:],
@@ -170,7 +170,7 @@ enum ShellService {
     /// merged stdout+stderr lines via the callback. Useful when the script
     /// content lives in memory (e.g. a settings field) rather than on disk.
     @discardableResult
-    static func runScriptStreaming(
+    public static func runScriptStreaming(
         scriptContent: String,
         in directory: String,
         onLine: @escaping @MainActor (String) -> Void

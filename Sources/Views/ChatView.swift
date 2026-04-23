@@ -132,7 +132,7 @@ struct ChatView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .tooltip("Open remote session in Terminal (⌘⇧R)")
+                .tooltip("Open in Terminal (⇧⌘R)")
             }
             if let urlString = worktree.remoteURL, let url = URL(string: urlString) {
                 Button {

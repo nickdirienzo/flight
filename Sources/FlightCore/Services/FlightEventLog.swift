@@ -10,14 +10,14 @@ import Foundation
 /// open/seek/write/close on the main thread for each one starves SwiftUI's
 /// rendering pipeline (blank-viewport-until-scroll jank). The queue
 /// preserves ordering and keeps the hot path free of disk I/O.
-enum FlightEventLog {
-    static var baseURL: URL {
+public enum FlightEventLog {
+    public static var baseURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("flight")
             .appendingPathComponent("flight-events")
     }
 
-    static func fileURL(conversationID: UUID) -> URL {
+    public static func fileURL(conversationID: UUID) -> URL {
         try? FileManager.default.createDirectory(at: baseURL, withIntermediateDirectories: true)
         return baseURL.appendingPathComponent("\(conversationID.uuidString).jsonl")
     }
@@ -27,7 +27,7 @@ enum FlightEventLog {
     /// Appends one event as a single JSONL line. Returns immediately; the
     /// encode + file write happen on a serial background queue so the order
     /// of appends is preserved while keeping the caller unblocked.
-    static func append(_ event: FlightEvent, conversationID: UUID) {
+    public static func append(_ event: FlightEvent, conversationID: UUID) {
         writeQueue.async {
             let url = fileURL(conversationID: conversationID)
             let encoder = JSONEncoder()
@@ -48,13 +48,13 @@ enum FlightEventLog {
     /// Blocking flush for code paths that need the on-disk log to reflect
     /// every prior `append` call before proceeding (e.g. hydrate running
     /// immediately after a migration backfill in the same tick).
-    static func waitForPendingWrites() {
+    public static func waitForPendingWrites() {
         writeQueue.sync { }
     }
 
     /// Reads all events for a conversation. Malformed lines are skipped —
     /// this is a best-effort log, not a transaction store.
-    static func load(conversationID: UUID) -> [FlightEvent] {
+    public static func load(conversationID: UUID) -> [FlightEvent] {
         // Drain any in-flight writes so the read sees the full log.
         waitForPendingWrites()
         let url = fileURL(conversationID: conversationID)
@@ -76,7 +76,7 @@ enum FlightEventLog {
         return events
     }
 
-    static func delete(conversationID: UUID) {
+    public static func delete(conversationID: UUID) {
         // Serialize the delete behind any pending appends for this
         // conversation so we don't get a write/unlink race.
         writeQueue.async {

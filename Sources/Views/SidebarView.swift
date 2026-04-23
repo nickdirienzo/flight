@@ -1,4 +1,5 @@
 import SwiftUI
+import FlightCore
 
 struct SidebarView: View {
     @Bindable var state: AppState

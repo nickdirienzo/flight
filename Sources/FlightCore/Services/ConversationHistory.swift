@@ -1,5 +1,4 @@
 import Foundation
-import FlightCore
 
 /// Rebuilds a conversation's rendered history from the two on-disk logs:
 ///   - Flight's own event log (`FlightEventLog`) — setup/provision/system
@@ -9,8 +8,8 @@ import FlightCore
 ///
 /// Events are merged by timestamp, then any `clear` marker truncates the
 /// prefix so cleared-then-resumed conversations start fresh in the UI.
-enum ConversationHistory {
-    static func hydrate(
+public enum ConversationHistory {
+    public static func hydrate(
         conversationID: UUID,
         worktreePath: String,
         sessionID: String?,

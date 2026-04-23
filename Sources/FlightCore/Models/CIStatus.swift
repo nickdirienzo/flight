@@ -1,15 +1,25 @@
 import Foundation
 
-struct CICheck: Codable {
-    let name: String
-    let state: String  // SUCCESS, FAILURE, PENDING, SKIPPED, etc.
-    let link: String?
+public struct CICheck: Codable {
+    public let name: String
+    public let state: String  // SUCCESS, FAILURE, PENDING, SKIPPED, etc.
+    public let link: String?
+
+    public init(name: String, state: String, link: String?) {
+        self.name = name
+        self.state = state
+        self.link = link
+    }
 }
 
-struct CIStatus {
-    var checks: [CICheck]
+public struct CIStatus {
+    public var checks: [CICheck]
 
-    var overall: CIConclusion {
+    public init(checks: [CICheck]) {
+        self.checks = checks
+    }
+
+    public var overall: CIConclusion {
         if checks.isEmpty { return .pending }
         let meaningful = checks.filter { $0.state != "SKIPPED" }
         if meaningful.isEmpty { return .success }
@@ -22,20 +32,20 @@ struct CIStatus {
         return .pending
     }
 
-    var failedCheckNames: [String] {
+    public var failedCheckNames: [String] {
         checks.filter { $0.state == "FAILURE" }.map(\.name)
     }
 
-    var passedCount: Int {
+    public var passedCount: Int {
         checks.filter { $0.state == "SUCCESS" }.count
     }
 
-    var totalMeaningful: Int {
+    public var totalMeaningful: Int {
         checks.filter { $0.state != "SKIPPED" }.count
     }
 }
 
-enum CIConclusion {
+public enum CIConclusion {
     case success
     case failure
     case pending

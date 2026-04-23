@@ -1,19 +1,20 @@
 import Foundation
+import Observation
 
 @Observable
-final class Project: Identifiable {
-    var id: String { name }
-    var name: String
+public final class Project: Identifiable {
+    public var id: String { name }
+    public var name: String
     /// Filesystem path to the local clone. `nil` for remote-only projects
     /// that have no checkout on this machine — those projects only support
     /// remote worktrees and skip every code path that touches a local repo.
-    var path: String?
-    var worktrees: [Worktree]
-    var remoteMode: RemoteModeConfig?
-    var forgeConfig: ForgeConfig?
-    var setupScript: String?
+    public var path: String?
+    public var worktrees: [Worktree]
+    public var remoteMode: RemoteModeConfig?
+    public var forgeConfig: ForgeConfig?
+    public var setupScript: String?
 
-    init(
+    public init(
         name: String,
         path: String?,
         worktrees: [Worktree] = [],
@@ -31,23 +32,23 @@ final class Project: Identifiable {
 
     /// Convenience for the common local-add case where the name is just
     /// the last path component.
-    convenience init(path: String) {
+    public convenience init(path: String) {
         self.init(
             name: URL(fileURLWithPath: path).lastPathComponent,
             path: path
         )
     }
 
-    var isRemoteOnly: Bool { path == nil }
+    public var isRemoteOnly: Bool { path == nil }
 
-    var hasRemoteMode: Bool {
+    public var hasRemoteMode: Bool {
         remoteMode != nil || RemoteScriptsService.hasAnyScript(project: self)
     }
 
     /// Returns the forge provider for this project, or nil if none configured.
     /// Local projects get a path-backed provider; remote-only projects get
     /// one that talks directly to `owner/repo` via the forge API.
-    var forgeProvider: ForgeProvider? {
+    public var forgeProvider: ForgeProvider? {
         guard let config = forgeConfig else { return nil }
         if let path {
             return config.type.makeLocalProvider(config: config, repoPath: path)
@@ -62,7 +63,7 @@ final class Project: Identifiable {
     /// set, otherwise by shelling out `git remote get-url origin` in the local
     /// checkout. Cached after first resolve; returns nil when no forge is
     /// configured or parsing fails.
-    func resolvedOwnerRepo() async -> (owner: String, repo: String)? {
+    public func resolvedOwnerRepo() async -> (owner: String, repo: String)? {
         if let cached = _cachedOwnerRepo { return cached }
         if let config = forgeConfig,
            let owner = config.owner,
@@ -98,7 +99,7 @@ final class Project: Identifiable {
     /// project's forge repo. Lets Flight attach a PR created on a renamed
     /// branch — `gh pr view '<branch>'` can't find those, but the agent
     /// usually prints the URL in its reply.
-    func extractPRNumber(from text: String) async -> Int? {
+    public func extractPRNumber(from text: String) async -> Int? {
         guard let config = forgeConfig else { return nil }
         guard let (owner, repo) = await resolvedOwnerRepo() else { return nil }
 
@@ -131,15 +132,15 @@ final class Project: Identifiable {
     }
 }
 
-struct ProjectConfig: Codable {
-    let name: String
-    let path: String?
-    var worktreeConfigs: [WorktreeConfig]
-    var remoteMode: RemoteModeConfig?
-    var forgeConfig: ForgeConfig?
-    var setupScript: String?
+public struct ProjectConfig: Codable {
+    public let name: String
+    public let path: String?
+    public var worktreeConfigs: [WorktreeConfig]
+    public var remoteMode: RemoteModeConfig?
+    public var forgeConfig: ForgeConfig?
+    public var setupScript: String?
 
-    init(from project: Project) {
+    public init(from project: Project) {
         self.name = project.name
         self.path = project.path
         self.worktreeConfigs = project.worktrees.map { WorktreeConfig(from: $0) }
@@ -148,7 +149,7 @@ struct ProjectConfig: Codable {
         self.setupScript = project.setupScript
     }
 
-    func toProject() -> Project {
+    public func toProject() -> Project {
         let project = Project(
             name: name,
             path: path,

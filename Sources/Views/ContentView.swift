@@ -1,4 +1,5 @@
 import SwiftUI
+import FlightCore
 
 struct ContentView: View {
     @Bindable var state: AppState

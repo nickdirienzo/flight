@@ -1,7 +1,7 @@
 import Foundation
 
-enum GitService {
-    static func createWorktree(repoPath: String, branch: String, worktreePath: String) async throws {
+public enum GitService {
+    public static func createWorktree(repoPath: String, branch: String, worktreePath: String) async throws {
         // Create the worktree with a new branch
         try await ShellService.run(
             "git -C \(quoted(repoPath)) worktree add \(quoted(worktreePath)) -b \(quoted(branch))"
@@ -15,7 +15,7 @@ enum GitService {
         }
     }
 
-    static func removeWorktree(repoPath: String, worktreePath: String, branch: String) async throws {
+    public static func removeWorktree(repoPath: String, worktreePath: String, branch: String) async throws {
         // Remove the worktree
         try await ShellService.run(
             "git -C \(quoted(repoPath)) worktree remove \(quoted(worktreePath)) --force"

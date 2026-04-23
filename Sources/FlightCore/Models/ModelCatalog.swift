@@ -12,21 +12,32 @@ import Foundation
 /// the 1M-context variant of a base model (confirmed working for
 /// `claude-opus-4-6[1m]`; add other 1M variants only after verifying the
 /// CLI accepts them).
-enum ModelCatalog {
-    struct Entry: Identifiable, Hashable {
-        let id: String      // CLI-accepted model ID
-        let label: String   // Shown in the menu
+public enum ModelCatalog {
+    public struct Entry: Identifiable, Hashable {
+        public let id: String      // CLI-accepted model ID
+        public let label: String   // Shown in the menu
 
-        var hasExtendedContext: Bool { id.hasSuffix("[1m]") }
+        public init(id: String, label: String) {
+            self.id = id
+            self.label = label
+        }
+
+        public var hasExtendedContext: Bool { id.hasSuffix("[1m]") }
     }
 
-    struct Family: Identifiable, Hashable {
-        let id: String      // "opus" / "sonnet" / "haiku"
-        let label: String
-        let entries: [Entry]
+    public struct Family: Identifiable, Hashable {
+        public let id: String      // "opus" / "sonnet" / "haiku"
+        public let label: String
+        public let entries: [Entry]
+
+        public init(id: String, label: String, entries: [Entry]) {
+            self.id = id
+            self.label = label
+            self.entries = entries
+        }
     }
 
-    static let families: [Family] = [
+    public static let families: [Family] = [
         Family(id: "opus", label: "Opus", entries: [
             Entry(id: "claude-opus-4-7",      label: "Opus 4.7"),
             Entry(id: "claude-opus-4-7[1m]",  label: "Opus 4.7 (1M)"),
@@ -43,7 +54,7 @@ enum ModelCatalog {
         ]),
     ]
 
-    static func entry(forID id: String) -> Entry? {
+    public static func entry(forID id: String) -> Entry? {
         for family in families {
             if let match = family.entries.first(where: { $0.id == id }) {
                 return match
@@ -52,7 +63,7 @@ enum ModelCatalog {
         return nil
     }
 
-    static func label(forID id: String) -> String {
+    public static func label(forID id: String) -> String {
         entry(forID: id)?.label ?? id
     }
 }

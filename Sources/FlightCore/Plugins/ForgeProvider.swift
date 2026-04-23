@@ -6,7 +6,7 @@ import Foundation
 /// Implementations wrap platform-specific CLIs or APIs (gh, tea, curl, etc.)
 /// and bake the repo location (local path or owner/repo) in at construction
 /// time, so call sites don't need to juggle paths.
-protocol ForgeProvider {
+public protocol ForgeProvider {
     /// Human-readable name for UI display (e.g. "GitHub", "Forgejo")
     var displayName: String { get }
 
@@ -25,13 +25,13 @@ protocol ForgeProvider {
 
 // MARK: - Forge Type
 
-enum ForgeType: String, Codable, CaseIterable, Identifiable {
+public enum ForgeType: String, Codable, CaseIterable, Identifiable {
     case github
     case forgejo
 
-    var id: String { rawValue }
+    public var id: String { rawValue }
 
-    var displayName: String {
+    public var displayName: String {
         switch self {
         case .github: return "GitHub"
         case .forgejo: return "Forgejo"
@@ -40,7 +40,7 @@ enum ForgeType: String, Codable, CaseIterable, Identifiable {
 
     /// Creates a provider for a locally cloned repo. Uses `gh` in the repo
     /// directory (for GitHub) or parses `origin` (for Forgejo).
-    func makeLocalProvider(config: ForgeConfig, repoPath: String) -> ForgeProvider {
+    public func makeLocalProvider(config: ForgeConfig, repoPath: String) -> ForgeProvider {
         switch self {
         case .github:
             return LocalGitHubForge(repoPath: repoPath)
@@ -55,7 +55,7 @@ enum ForgeType: String, Codable, CaseIterable, Identifiable {
 
     /// Creates a provider for a remote-only project where there is no local
     /// clone. Requires `owner` and `repo` to be set on the config.
-    func makeRemoteProvider(config: ForgeConfig) -> ForgeProvider? {
+    public func makeRemoteProvider(config: ForgeConfig) -> ForgeProvider? {
         guard let owner = config.owner, let repo = config.repo else { return nil }
         switch self {
         case .github:
@@ -72,7 +72,7 @@ enum ForgeType: String, Codable, CaseIterable, Identifiable {
 
     /// Detect forge type from a git remote URL.
     /// Returns nil for unrecognized hosts (user must configure manually).
-    static func detect(remoteURL: String) -> ForgeType? {
+    public static func detect(remoteURL: String) -> ForgeType? {
         let lower = remoteURL.lowercased()
         if lower.contains("github.com") { return .github }
         // Forgejo/Gitea instances vary by host — can't auto-detect.
@@ -81,7 +81,7 @@ enum ForgeType: String, Codable, CaseIterable, Identifiable {
     }
 
     /// Detect forge type by reading the origin remote of a repo.
-    static func detect(inRepo path: String) async -> ForgeType? {
+    public static func detect(inRepo path: String) async -> ForgeType? {
         guard let output = try? await ShellService.run("git remote get-url origin", in: path) else {
             return nil
         }
@@ -91,30 +91,44 @@ enum ForgeType: String, Codable, CaseIterable, Identifiable {
 
 // MARK: - Forge Config (persisted per-project)
 
-struct ForgeConfig: Codable {
-    var type: ForgeType
+public struct ForgeConfig: Codable {
+    public var type: ForgeType
 
     // For self-hosted forges (Forgejo, GitLab, etc.)
-    var baseURL: String?
+    public var baseURL: String?
 
     // Environment variable name that holds the API token (e.g. "FORGEJO_TOKEN")
     // Avoids storing secrets in the config file.
-    var tokenEnvVar: String?
+    public var tokenEnvVar: String?
 
     // Owner and repo for remote-only projects (no local clone). Local
     // projects can leave these nil and resolve owner/repo via the git
     // remote at call time.
-    var owner: String?
-    var repo: String?
+    public var owner: String?
+    public var repo: String?
+
+    public init(
+        type: ForgeType,
+        baseURL: String? = nil,
+        tokenEnvVar: String? = nil,
+        owner: String? = nil,
+        repo: String? = nil
+    ) {
+        self.type = type
+        self.baseURL = baseURL
+        self.tokenEnvVar = tokenEnvVar
+        self.owner = owner
+        self.repo = repo
+    }
 }
 
 // MARK: - Errors
 
-enum ForgeError: Error, LocalizedError {
+public enum ForgeError: Error, LocalizedError {
     case noForgeConfigured
     case apiError(String)
 
-    var errorDescription: String? {
+    public var errorDescription: String? {
         switch self {
         case .noForgeConfigured:
             return "No forge configured for this project. Set one in project settings."

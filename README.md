@@ -221,6 +221,52 @@ All data lives in `~/flight/`:
   remote-scripts/          Cached .flight/* for remote-only projects (one dir per project)
 ```
 
+## FlightServer
+
+FlightServer is a standalone HTTP daemon that exposes the Flight agent loop
+— worktree lifecycle plus streaming `claude -p` turns — over a tiny REST
+interface. Run it on any Linux machine on your Tailscale network to drive
+agents from a browser, a mobile client, or a CI job.
+
+```bash
+swift build -c release
+scp .build/release/FlightServer my-server:/usr/local/bin/
+ssh my-server FlightServer
+```
+
+The server has no auth — **run it behind Tailscale** (or an equivalent
+private network). It binds to `0.0.0.0:7007` by default; override with
+`FLIGHT_PORT`.
+
+### Endpoints
+
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/sessions` | Create a worktree. Body: `{"repoPath": "...", "branch": "..."}` (branch optional). Returns `{"sessionId", "branch", "worktreePath"}`. |
+| `GET` | `/sessions` | List active sessions. |
+| `POST` | `/sessions/:id/chat` | Run one `claude -p` turn. Body: `{"message": "..."}`. Response is a Server-Sent Events stream of the same stream-json lines the Mac app parses. |
+| `DELETE` | `/sessions/:id` | Tear down the worktree. |
+
+Each chat turn spawns a fresh `claude -p` subprocess (or `--resume` when a
+session ID is already attached), so one HTTP request maps to exactly one
+agent turn. This is the same one-process-per-turn model the Mac app uses
+(see `doc/adr/001-one-process-per-turn-agent.md`).
+
+### Deployment
+
+The recommended path is to bake FlightServer into your workspace base image
+— a Docker image, a Coder template, a Packer AMI — and have your
+`.flight/provision` script start it. That way the client never has to
+upload or install anything, which rules out a whole class of remote
+failure modes (see `doc/adr/005-no-remote-binary-management.md`).
+
+```dockerfile
+# in your workspace Dockerfile
+COPY FlightServer /usr/local/bin/
+ENV FLIGHT_PORT=7007
+CMD ["FlightServer"]
+```
+
 ## License
 
 MIT

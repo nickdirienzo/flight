@@ -1,15 +1,15 @@
 import Foundation
-import FlightCore
+import Observation
 
 /// Effort level passed to `claude --effort`. `nil` case defers to the CLI default.
-enum ConversationEffort: String, Codable, CaseIterable, Identifiable {
+public enum ConversationEffort: String, Codable, CaseIterable, Identifiable {
     case low
     case medium
     case high
     case xhigh
     case max
-    var id: String { rawValue }
-    var label: String {
+    public var id: String { rawValue }
+    public var label: String {
         switch self {
         case .low: return "Low"
         case .medium: return "Medium"
@@ -23,36 +23,41 @@ enum ConversationEffort: String, Codable, CaseIterable, Identifiable {
 /// A message the user submitted before the worktree finished provisioning.
 /// Held on the conversation until the real (possibly remote) agent spawns,
 /// then flushed through `agent.send`.
-struct PendingSend {
-    let text: String
-    let images: [Data]
+public struct PendingSend {
+    public let text: String
+    public let images: [Data]
+
+    public init(text: String, images: [Data]) {
+        self.text = text
+        self.images = images
+    }
 }
 
 @Observable
-final class Conversation: Identifiable {
-    let id: UUID
-    var name: String
-    private(set) var messages: [AgentMessage]
-    private(set) var sections: [ChatSection] = []
-    var sessionID: String?
-    var agentBusy: Bool = false
-    var planMode: Bool = false
+public final class Conversation: Identifiable {
+    public let id: UUID
+    public var name: String
+    public private(set) var messages: [AgentMessage]
+    public private(set) var sections: [ChatSection] = []
+    public var sessionID: String?
+    public var agentBusy: Bool = false
+    public var planMode: Bool = false
     /// Raw `claude --model` ID (e.g. "claude-opus-4-6[1m]"). `nil` = CLI default.
-    var modelID: String?
-    var effort: ConversationEffort?
-    var agent: ClaudeAgent?
-    var pendingSend: PendingSend?
+    public var modelID: String?
+    public var effort: ConversationEffort?
+    public var agent: ClaudeAgent?
+    public var pendingSend: PendingSend?
 
     /// True while the session has been handed off to an interactive remote
     /// `claude` process (visible in the mobile app). Flight should sync the
     /// transcript before resuming its own `-p` turns.
-    var remoteSessionActive: Bool = false
+    public var remoteSessionActive: Bool = false
 
     /// Number of local messages at the moment the remote session was opened.
     /// Used to detect which messages in the remote transcript are "new".
-    var handoffMessageCount: Int?
+    public var handoffMessageCount: Int?
 
-    init(
+    public init(
         id: UUID = UUID(),
         name: String = "Chat",
         sessionID: String? = nil
@@ -65,37 +70,37 @@ final class Conversation: Identifiable {
 
     // MARK: - Message Mutation (always rebuilds sections)
 
-    func appendMessage(_ message: AgentMessage) {
+    public func appendMessage(_ message: AgentMessage) {
         messages.append(message)
         sections = ChatSection.build(from: messages)
     }
 
-    func appendMessages(_ newMessages: [AgentMessage]) {
+    public func appendMessages(_ newMessages: [AgentMessage]) {
         messages.append(contentsOf: newMessages)
         sections = ChatSection.build(from: messages)
     }
 
-    func setMessages(_ newMessages: [AgentMessage]) {
+    public func setMessages(_ newMessages: [AgentMessage]) {
         messages = newMessages
         sections = ChatSection.build(from: messages)
     }
 
-    func clearMessages() {
+    public func clearMessages() {
         messages.removeAll()
         sections = []
     }
 }
 
-struct ConversationConfig: Codable {
-    let id: UUID
-    var name: String
-    var sessionID: String?
-    var remoteSessionActive: Bool?
-    var handoffMessageCount: Int?
-    var modelID: String?
-    var effort: ConversationEffort?
+public struct ConversationConfig: Codable {
+    public let id: UUID
+    public var name: String
+    public var sessionID: String?
+    public var remoteSessionActive: Bool?
+    public var handoffMessageCount: Int?
+    public var modelID: String?
+    public var effort: ConversationEffort?
 
-    init(from conversation: Conversation) {
+    public init(from conversation: Conversation) {
         self.id = conversation.id
         self.name = conversation.name
         self.sessionID = conversation.sessionID
@@ -105,7 +110,7 @@ struct ConversationConfig: Codable {
         self.effort = conversation.effort
     }
 
-    func toConversation(worktreePath: String, isRemote: Bool) -> Conversation {
+    public func toConversation(worktreePath: String, isRemote: Bool) -> Conversation {
         let conv = Conversation(id: id, name: name, sessionID: sessionID)
         conv.setMessages(ConversationHistory.hydrate(
             conversationID: id,

@@ -1,25 +1,31 @@
 import Foundation
 
-enum RemoteLifecycle: String, CaseIterable {
+public enum RemoteLifecycle: String, CaseIterable {
     case provision
     case connect
     case teardown
     case list
 }
 
-struct ResolvedRemoteCommand {
+public struct ResolvedRemoteCommand {
     /// Shell command string. Executed via `zsh -l -c`. For `.flight/`
     /// scripts this is `"<scriptPath>" "$@"` so the script receives any
     /// trailing args (e.g. the remote command for `connect`). For
     /// settings templates this is the user-supplied string verbatim.
-    let command: String
+    public let command: String
     /// Environment overrides to layer on top of the process env.
     /// `FLIGHT_BRANCH` for `provision`, `FLIGHT_WORKSPACE` for
     /// `connect`/`teardown`, empty for `list`.
-    let environment: [String: String]
+    public let environment: [String: String]
     /// Working directory to run in. Always the repo root — so `.flight/`
     /// scripts and settings templates can reference the repo consistently.
-    let workingDirectory: String?
+    public let workingDirectory: String?
+
+    public init(command: String, environment: [String: String], workingDirectory: String?) {
+        self.command = command
+        self.environment = environment
+        self.workingDirectory = workingDirectory
+    }
 }
 
 /// Resolves the shell command to run for a remote-mode lifecycle stage.
@@ -46,8 +52,8 @@ struct ResolvedRemoteCommand {
 ///    positional args when invoking.
 /// - `teardown`: `FLIGHT_WORKSPACE` is set. No `$@`.
 /// - `list`: no env vars, no `$@`. Prints one workspace name per line.
-enum RemoteScriptsService {
-    static func resolve(
+public enum RemoteScriptsService {
+    public static func resolve(
         _ lifecycle: RemoteLifecycle,
         project: Project,
         branch: String? = nil,
@@ -101,7 +107,7 @@ enum RemoteScriptsService {
         return FileManager.default.fileExists(atPath: path) ? path : nil
     }
 
-    static func isAvailable(_ lifecycle: RemoteLifecycle, project: Project) -> Bool {
+    public static func isAvailable(_ lifecycle: RemoteLifecycle, project: Project) -> Bool {
         if project.isRemoteOnly {
             return cachedScriptPath(lifecycle, projectName: project.name) != nil
         }
@@ -109,14 +115,14 @@ enum RemoteScriptsService {
         return flightScriptPath(lifecycle, project: project) != nil
     }
 
-    static func hasAnyScript(project: Project) -> Bool {
+    public static func hasAnyScript(project: Project) -> Bool {
         RemoteLifecycle.allCases.contains { isAvailable($0, project: project) }
     }
 
     /// True when a `.flight/<lifecycle>` file exists in the repo, regardless
     /// of whether the settings field is also set. Useful for surfacing in
     /// the Settings UI.
-    static func hasFile(_ lifecycle: RemoteLifecycle, project: Project) -> Bool {
+    public static func hasFile(_ lifecycle: RemoteLifecycle, project: Project) -> Bool {
         flightScriptPath(lifecycle, project: project) != nil
     }
 
@@ -124,7 +130,7 @@ enum RemoteScriptsService {
     /// metadata prefix `FLIGHT_OUTPUT: key=value`. Returns the parsed
     /// key/value pair when matched, or `nil` for regular progress output.
     /// Caller should suppress matched lines from the UI stream.
-    static func parseFlightOutput(_ line: String) -> (key: String, value: String)? {
+    public static func parseFlightOutput(_ line: String) -> (key: String, value: String)? {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
         guard trimmed.hasPrefix("FLIGHT_OUTPUT:") else { return nil }
         let body = trimmed.dropFirst("FLIGHT_OUTPUT:".count).trimmingCharacters(in: .whitespaces)

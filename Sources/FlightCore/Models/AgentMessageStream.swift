@@ -1,16 +1,15 @@
 import Foundation
-import FlightCore
 
 // MARK: - Stream JSON Parsing
 
-struct StreamEvent: Decodable {
-    let type: String
-    let subtype: String?
-    let message: StreamMessage?
-    let result: String?
-    let sessionID: String?
-    let requestID: String?
-    let request: ControlRequest?
+public struct StreamEvent: Decodable {
+    public let type: String
+    public let subtype: String?
+    public let message: StreamMessage?
+    public let result: String?
+    public let sessionID: String?
+    public let requestID: String?
+    public let request: ControlRequest?
 
     enum CodingKeys: String, CodingKey {
         case type, subtype, message, result, request
@@ -18,11 +17,11 @@ struct StreamEvent: Decodable {
         case requestID = "request_id"
     }
 
-    struct ControlRequest: Decodable {
-        let subtype: String?
-        let toolName: String?
-        let description: String?
-        let input: [String: AnyCodable]?
+    public struct ControlRequest: Decodable {
+        public let subtype: String?
+        public let toolName: String?
+        public let description: String?
+        public let input: [String: AnyCodable]?
 
         enum CodingKeys: String, CodingKey {
             case subtype, description, input
@@ -30,11 +29,11 @@ struct StreamEvent: Decodable {
         }
     }
 
-    struct StreamMessage: Decodable {
-        let role: String?
-        let content: StreamContent?
+    public struct StreamMessage: Decodable {
+        public let role: String?
+        public let content: StreamContent?
 
-        init(from decoder: Decoder) throws {
+        public init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             role = try container.decodeIfPresent(String.self, forKey: .role)
             // content can be a string or an array of content blocks
@@ -52,25 +51,25 @@ struct StreamEvent: Decodable {
         }
     }
 
-    enum StreamContent {
+    public enum StreamContent {
         case text(String)
         case blocks([ContentBlock])
     }
 
-    struct ContentBlock: Decodable {
-        let type: String
-        let text: String?
-        let name: String?
-        let input: AnyCodable?
-        let content: String?
+    public struct ContentBlock: Decodable {
+        public let type: String
+        public let text: String?
+        public let name: String?
+        public let input: AnyCodable?
+        public let content: String?
     }
 }
 
 // Lightweight wrapper to decode arbitrary JSON values
-struct AnyCodable: Decodable {
-    let value: Any
+public struct AnyCodable: Decodable {
+    public let value: Any
 
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         if let str = try? container.decode(String.self) {
             value = str
@@ -87,7 +86,7 @@ struct AnyCodable: Decodable {
         }
     }
 
-    var jsonString: String {
+    public var jsonString: String {
         if let data = try? JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed]),
            let str = String(data: data, encoding: .utf8) {
             return str
@@ -97,7 +96,7 @@ struct AnyCodable: Decodable {
 }
 
 extension StreamEvent {
-    func toAgentMessages() -> [AgentMessage] {
+    public func toAgentMessages() -> [AgentMessage] {
         // Skip non-chat events
         if type == "system" || type == "rate_limit_event" || type == "result" { return [] }
 

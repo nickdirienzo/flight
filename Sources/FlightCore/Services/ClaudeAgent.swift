@@ -1,8 +1,8 @@
 import Foundation
-import FlightCore
+import Observation
 
 @Observable
-final class ClaudeAgent {
+public final class ClaudeAgent {
     private var process: Process?
     private var stdinPipe: Pipe?
     private var stdoutPipe: Pipe?
@@ -16,15 +16,17 @@ final class ClaudeAgent {
     /// `.flight/connect` script or a custom `coder ssh ...` template).
     private var remoteConnect: ResolvedRemoteCommand?
 
-    private(set) var isRunning = false
-    private(set) var isBusy = false
-    private(set) var turnStartDate: Date?
-    private(set) var sessionID: String?
-    var onMessages: (([AgentMessage]) -> Void)?
-    var onSessionID: ((String) -> Void)?
-    var onBusyChanged: ((Bool) -> Void)?
+    public private(set) var isRunning = false
+    public private(set) var isBusy = false
+    public private(set) var turnStartDate: Date?
+    public private(set) var sessionID: String?
+    public var onMessages: (([AgentMessage]) -> Void)?
+    public var onSessionID: ((String) -> Void)?
+    public var onBusyChanged: ((Bool) -> Void)?
 
-    func start(
+    public init() {}
+
+    public func start(
         in directory: String,
         resumeSessionID: String? = nil,
         logFile: URL? = nil,
@@ -47,7 +49,7 @@ final class ClaudeAgent {
         isRunning = true
     }
 
-    func send(
+    public func send(
         message: String,
         images: [Data] = [],
         planMode: Bool = false,
@@ -69,13 +71,13 @@ final class ClaudeAgent {
         spawnTurn(message: message, images: images, planMode: planMode, model: model, effort: effort)
     }
 
-    func interrupt() {
+    public func interrupt() {
         guard let process, process.isRunning else { return }
         log("=== SIGINT sent ===")
         process.interrupt()
     }
 
-    func respondToControlRequest(requestID: String, allow: Bool) {
+    public func respondToControlRequest(requestID: String, allow: Bool) {
         guard let stdinPipe else { return }
 
         let response: [String: Any] = [
@@ -96,7 +98,7 @@ final class ClaudeAgent {
         }
     }
 
-    func stop() {
+    public func stop() {
         pendingMessages.removeAll()
         teardownCurrentTurn()
         log("=== Agent stopped at \(Date()) ===")

@@ -1,4 +1,5 @@
 import SwiftUI
+import FlightCore
 
 /// Command-palette style modal for picking which project to act on.
 /// Used by Cmd+N (new local worktree) and Cmd+Shift+N (new remote worktree)

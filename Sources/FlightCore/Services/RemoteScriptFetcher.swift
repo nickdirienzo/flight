@@ -5,13 +5,13 @@ import Foundation
 /// on-disk scripts for locally cloned repos. Used exclusively by
 /// remote-only projects — local projects read scripts from their own
 /// worktree as before.
-enum RemoteScriptFetcher {
+public enum RemoteScriptFetcher {
     /// Cache root. Each project gets a subdirectory by name.
-    static var cacheBaseURL: URL {
+    public static var cacheBaseURL: URL {
         ConfigService.flightHomeURL.appendingPathComponent("remote-scripts")
     }
 
-    static func cacheDirectory(for projectName: String) -> URL {
+    public static func cacheDirectory(for projectName: String) -> URL {
         cacheBaseURL.appendingPathComponent(projectName)
     }
 
@@ -19,7 +19,7 @@ enum RemoteScriptFetcher {
     /// into the project's cache dir. Throws if required scripts are
     /// missing or unreadable. `list` is optional and silently skipped if
     /// the repo doesn't have one.
-    static func fetchAll(forge: ForgeConfig, projectName: String) async throws {
+    public static func fetchAll(forge: ForgeConfig, projectName: String) async throws {
         guard let owner = forge.owner, let repo = forge.repo else {
             throw ForgeError.apiError("Forge config missing owner/repo")
         }
