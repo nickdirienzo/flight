@@ -30,5 +30,11 @@ let package = Package(
             path: "Sources/FlightBench",
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
+        .testTarget(
+            name: "FlightCoreTests",
+            dependencies: ["FlightCore"],
+            path: "Tests/FlightCoreTests",
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
     ]
 )
