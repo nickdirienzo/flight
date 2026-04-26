@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct SettingsView: View {
+public struct SettingsView: View {
     @Bindable var state: AppState
 
     @AppStorage("flightFontSize") private var fontSize: Double = 14
@@ -18,7 +18,11 @@ struct SettingsView: View {
     @State private var worktreeProjectID: String?
     @State private var setupScript: String = ""
 
-    var body: some View {
+    public init(state: AppState) {
+        self.state = state
+    }
+
+    public var body: some View {
         TabView {
             generalTab
                 .tabItem { Label("General", systemImage: "gearshape") }

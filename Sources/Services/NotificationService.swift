@@ -1,8 +1,8 @@
 import Foundation
 import UserNotifications
 
-enum NotificationService {
-    static func requestPermission() {
+public enum NotificationService {
+    public static func requestPermission() {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
     }
 

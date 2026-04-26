@@ -106,6 +106,19 @@ final class ClaudeAgent {
         isBusy = false
     }
 
+    /// Stop and wait for any in-flight stdout batch to finish. The read task
+    /// builds a batch on a background executor and dispatches it via
+    /// `await MainActor.run { onMessages?(batch) }`. A plain `stop()` cancels
+    /// the task but a queued MainActor block can still fire afterwards and
+    /// mutate `Conversation.messages`/`sections`. Callers tearing down the
+    /// owning Worktree must await the drain so those mutations don't race the
+    /// SwiftUI view tree being rebuilt around the doomed conversation.
+    func stopAndDrain() async {
+        let task = readTask
+        stop()
+        _ = await task?.value
+    }
+
     /// Kill the current turn's claude -p and release its pipes. Each turn
     /// is a fresh `claude -p --resume <sid>` invocation — cheap and coherent
     /// because the session state lives in the jsonl — but only if we

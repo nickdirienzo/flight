@@ -6,7 +6,7 @@ import os.log
 private let ciLog = Logger(subsystem: "flight", category: "checkCI")
 
 @Observable
-final class AppState {
+public final class AppState {
     var projects: [Project] = []
     var selectedProjectID: String?
     var selectedWorktreeID: String?
@@ -43,7 +43,7 @@ final class AppState {
         projects.flatMap(\.worktrees)
     }
 
-    init() {
+    public init() {
         ConfigService.ensureDirectories()
         let config = ConfigService.load()
         self.projects = config.projects.map { $0.toProject() }
@@ -397,8 +397,15 @@ final class AppState {
     func removeWorktree(_ worktree: Worktree) async {
         guard let project = projectForWorktree(worktree) else { return }
 
+        // Drain pending stdout batches before any UI-state mutation. A plain
+        // stop() leaves a queued `MainActor.run` block free to fire during the
+        // teardown await below, calling appendMessages on a Conversation whose
+        // worktree is mid-delete — which mutates `sections` while ChatView's
+        // ForEach is being torn down. That's the race that crashed in
+        // assignWithTake for ForEachState.LazyEdits (PAC fault on a freed
+        // String storage in the just-replaced sections array).
         for conversation in worktree.conversations {
-            conversation.agent?.stop()
+            await conversation.agent?.stopAndDrain()
         }
 
         worktree.status = .deleting
@@ -442,10 +449,17 @@ final class AppState {
         for conv in worktree.conversations {
             FlightEventLog.delete(conversationID: conv.id)
         }
-        project.worktrees.removeAll { $0.id == worktree.id }
+        // Detach the view tree from the doomed worktree *before* removing it
+        // from `project.worktrees`. Otherwise SwiftUI sees the worktrees-array
+        // mutation first, runs ContentView.body with `selectedWorktreeID`
+        // still pointing at a worktree that's no longer in any project, then
+        // a second selection mutation triggers a second pass — two ForEach
+        // updates during teardown instead of one.
         if selectedWorktreeID == worktree.id {
-            selectedWorktreeID = project.worktrees.first?.id
+            selectedWorktreeID = project.worktrees
+                .first(where: { $0.id != worktree.id })?.id
         }
+        project.worktrees.removeAll { $0.id == worktree.id }
         saveConfig()
     }
 
@@ -577,7 +591,7 @@ final class AppState {
         }
     }
 
-    func stopAllAgents() {
+    public func stopAllAgents() {
         // Cancel any in-progress provisioning tasks (terminates the shell process)
         for (_, task) in provisioningTasks {
             task.cancel()
