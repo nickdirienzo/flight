@@ -22,6 +22,29 @@ public enum ChatSection: Identifiable {
         }
     }
 
+    /// Returns the absolute start index into a `[ChatSection]` for the
+    /// trailing window the chat view should render. Pure function so the
+    /// pagination behavior (initial cap, load-more backfill, streaming
+    /// growth, reset) is directly unit-testable.
+    ///
+    /// - `firstShownIndex == nil` derives the default: last
+    ///   `initialVisibleCount` sections. Used on first appearance and on
+    ///   conversation switch — capping a freshly-opened long conversation
+    ///   without needing an .onAppear hop first.
+    /// - `firstShownIndex == k` pins the window's left edge to absolute
+    ///   index k (clamped to `[0, totalCount]`). New sections appended
+    ///   during streaming grow `totalCount` while `firstShownIndex` stays
+    ///   put — the window absorbs them at the bottom instead of sliding
+    ///   off the top.
+    public static func paginationStart(
+        totalCount: Int,
+        firstShownIndex: Int?,
+        initialVisibleCount: Int
+    ) -> Int {
+        let defaultStart = max(0, totalCount - initialVisibleCount)
+        return max(0, min(firstShownIndex ?? defaultStart, totalCount))
+    }
+
     public static func build(from messages: [AgentMessage]) -> [ChatSection] {
         var sections: [ChatSection] = []
         var currentTools: [AgentMessage] = []

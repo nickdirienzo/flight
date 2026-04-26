@@ -1,8 +1,12 @@
 import SwiftUI
 
-struct ContentView: View {
+public struct ContentView: View {
     @Bindable var state: AppState
     @Environment(\.theme) private var theme
+
+    public init(state: AppState) {
+        self.state = state
+    }
 
     private var selectedWorktree: Worktree? {
         guard let id = state.selectedWorktreeID else { return nil }
@@ -14,7 +18,7 @@ struct ContentView: View {
         return nil
     }
 
-    var body: some View {
+    public var body: some View {
         HSplitView {
             SidebarView(state: state)
                 .frame(minWidth: 180, idealWidth: 220, maxWidth: 300)

@@ -159,29 +159,29 @@ extension Color {
 
 // MARK: - Theme Colors
 
-struct ThemeColors {
-    let background: Color
-    let sidebar: Color
-    let inputBackground: Color
-    let text: Color
-    let secondaryText: Color
-    let userBubble: Color
-    let assistantBubble: Color
-    let toolGroupBackground: Color
-    let border: Color
-    let accent: Color
-    let headerBackground: Color
+public struct ThemeColors {
+    public let background: Color
+    public let sidebar: Color
+    public let inputBackground: Color
+    public let text: Color
+    public let secondaryText: Color
+    public let userBubble: Color
+    public let assistantBubble: Color
+    public let toolGroupBackground: Color
+    public let border: Color
+    public let accent: Color
+    public let headerBackground: Color
 
     // Semantic colors (mapped from Base16)
-    let red: Color       // base08 — errors, stop, CI failure
-    let orange: Color    // base09 — tool calls, working status
-    let yellow: Color    // base0A — warnings, creating status, permissions
-    let green: Color     // base0B — success, ready status, CI pass
-    let cyan: Color      // base0C — info
-    let blue: Color      // base0D — accent, links (same as accent)
-    let purple: Color    // base0E — plan mode
+    public let red: Color       // base08 — errors, stop, CI failure
+    public let orange: Color    // base09 — tool calls, working status
+    public let yellow: Color    // base0A — warnings, creating status, permissions
+    public let green: Color     // base0B — success, ready status, CI pass
+    public let cyan: Color      // base0C — info
+    public let blue: Color      // base0D — accent, links (same as accent)
+    public let purple: Color    // base0E — plan mode
 
-    static let system = ThemeColors(
+    public static let system = ThemeColors(
         background: Color(nsColor: .windowBackgroundColor),
         sidebar: Color(nsColor: .windowBackgroundColor),
         inputBackground: Color(nsColor: .controlBackgroundColor),
@@ -206,11 +206,11 @@ struct ThemeColors {
 // MARK: - Theme Manager
 
 @Observable
-final class ThemeManager {
-    static let shared = ThemeManager()
+public final class ThemeManager {
+    public static let shared = ThemeManager()
 
-    var currentColors: ThemeColors = .system
-    var currentColorScheme: ColorScheme? = nil
+    public var currentColors: ThemeColors = .system
+    public var currentColorScheme: ColorScheme? = nil
 
     private init() {
         load()
@@ -305,7 +305,7 @@ private struct ThemeKey: EnvironmentKey {
     static let defaultValue: ThemeColors = .system
 }
 
-extension EnvironmentValues {
+public extension EnvironmentValues {
     var theme: ThemeColors {
         get { self[ThemeKey.self] }
         set { self[ThemeKey.self] = newValue }

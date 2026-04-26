@@ -14,14 +14,23 @@ let package = Package(
             path: "Sources/FlightCore",
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
-        .executableTarget(
-            name: "Flight",
+        // The bulk of the app lives in this library so the test target can
+        // import it (executableTargets aren't importable). The actual
+        // executable below is a thin shim whose only job is to host @main.
+        .target(
+            name: "FlightApp",
             dependencies: [
                 "FlightCore",
                 .product(name: "Textual", package: "textual"),
             ],
             path: "Sources",
-            exclude: ["FlightBench", "FlightCore"],
+            exclude: ["FlightBench", "FlightCore", "FlightExecutable"],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+        .executableTarget(
+            name: "Flight",
+            dependencies: ["FlightApp"],
+            path: "Sources/FlightExecutable",
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .executableTarget(
@@ -34,6 +43,16 @@ let package = Package(
             name: "FlightCoreTests",
             dependencies: ["FlightCore"],
             path: "Tests/FlightCoreTests",
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+        // Hosts NSHostingView-driven tests of the SwiftUI views in
+        // FlightApp. Imports FlightApp via @testable so it can construct
+        // ChatMessageListView with a synthetic AppState/Worktree without
+        // making the entire view layer public.
+        .testTarget(
+            name: "FlightAppTests",
+            dependencies: ["FlightApp", "FlightCore"],
+            path: "Tests/FlightAppTests",
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
     ]

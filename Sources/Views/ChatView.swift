@@ -369,8 +369,34 @@ struct ChatMessageListView: View {
         conversation?.sections ?? []
     }
 
+    /// Initial trailing-section count when a conversation first appears.
+    /// Bounds the SwiftUI AttributeGraph and the value-witness work
+    /// ForEachState does on each update for very long conversations.
+    private static let initialVisibleCount = 150
+
+    /// How many older sections to backfill when the user scrolls to the
+    /// top of the loaded window. Each backfill prepends one page in-place,
+    /// re-anchored to the user's reading position so the viewport doesn't
+    /// jump.
+    private static let pageSize = 150
+
+    /// Absolute index in `sections` where the visible window begins.
+    /// `nil` = use the derived default (last `initialVisibleCount`),
+    /// which lets a brand-new conversation render with the cap applied
+    /// before any event fires. Conversation switch resets this to `nil`.
+    /// Streaming-driven section growth doesn't change it — the window
+    /// simply grows at the bottom.
+    @State private var firstShownIndex: Int? = nil
+
     private var visibleSections: [ChatSection] {
-        sections
+        let s = sections
+        let start = ChatSection.paginationStart(
+            totalCount: s.count,
+            firstShownIndex: firstShownIndex,
+            initialVisibleCount: Self.initialVisibleCount
+        )
+        if start <= 0 { return s }
+        return Array(s[start...])
     }
 
     private var lastSectionAbsorbsThinkingIndicator: Bool {
@@ -444,8 +470,49 @@ struct ChatMessageListView: View {
                         .id("setup-placeholder")
                     }
 
-                    ForEach(visibleSections) { section in
-                        let isLast = section.id == visibleSections.last?.id
+                    let snapshot = visibleSections
+                    let lastID = snapshot.last?.id
+                    let firstVisibleID = snapshot.first?.id
+                    let totalSectionCount = sections.count
+                    let hasOlderSections = snapshot.count < totalSectionCount
+
+                    if hasOlderSections {
+                        // Sentinel that fires once each time the user scrolls
+                        // to the top of the loaded window. LazyVStack only
+                        // realizes this view when it enters the viewport, so
+                        // .onAppear naturally triggers backfill exactly when
+                        // needed. After we expand the window, the scroll
+                        // restoration below pins the user's reading position
+                        // so the viewport doesn't visually jump up.
+                        Color.clear
+                            .frame(height: 1)
+                            .id(Self.topAnchorID)
+                            .onAppear {
+                                let anchor = firstVisibleID
+                                let currentStart = ChatSection.paginationStart(
+                                    totalCount: totalSectionCount,
+                                    firstShownIndex: firstShownIndex,
+                                    initialVisibleCount: Self.initialVisibleCount
+                                )
+                                let newStart = max(0, currentStart - Self.pageSize)
+                                guard newStart < currentStart else { return }
+                                firstShownIndex = newStart
+                                if let anchor {
+                                    DispatchQueue.main.async {
+                                        proxy.scrollTo(anchor, anchor: .top)
+                                    }
+                                }
+                            }
+                    }
+
+                    ForEach(snapshot) { section in
+                        let isLast = section.id == lastID
+                        // Each rendered section bubbles its UUID up through
+                        // RenderedSectionIDsPreferenceKey. Production has no
+                        // observer (no-op); tests observe via .onPreferenceChange
+                        // to verify the realized set never escapes the
+                        // paginated window.
+                        let sectionID = section.id
                         switch section {
                         case .message(let message):
                             MessageView(
@@ -456,12 +523,15 @@ struct ChatMessageListView: View {
                             )
                                 .equatable()
                                 .id(message.id)
+                                .preference(key: RenderedSectionIDsPreferenceKey.self, value: [sectionID])
                         case .toolGroup(let groupID, let tools):
                             ToolGroupView(tools: tools, isActive: isLast && isThinking)
                                 .id(groupID)
+                                .preference(key: RenderedSectionIDsPreferenceKey.self, value: [sectionID])
                         case .thinkingGroup(let groupID, let thoughts):
                             ThinkingGroupView(thoughts: thoughts, isActive: isLast && isThinking)
                                 .id(groupID)
+                                .preference(key: RenderedSectionIDsPreferenceKey.self, value: [sectionID])
                         case .provisionGroup(let groupID, let logs):
                             ProvisionGroupView(
                                 logs: logs,
@@ -469,6 +539,7 @@ struct ChatMessageListView: View {
                                 kind: .remoteProvision
                             )
                             .id(groupID)
+                            .preference(key: RenderedSectionIDsPreferenceKey.self, value: [sectionID])
                         case .setupGroup(let groupID, let logs):
                             ProvisionGroupView(
                                 logs: logs,
@@ -476,16 +547,20 @@ struct ChatMessageListView: View {
                                 kind: .worktreeSetup
                             )
                             .id(groupID)
+                            .preference(key: RenderedSectionIDsPreferenceKey.self, value: [sectionID])
                         case .plan(let message):
                             PlanView(message: message, state: state, worktree: worktree)
                                 .id(message.id)
+                                .preference(key: RenderedSectionIDsPreferenceKey.self, value: [sectionID])
                         case .system(let message):
                             if message.isPermissionRequest, let conversation {
                                 PermissionRequestView(message: message, conversation: conversation, state: state)
                                     .id(message.id)
+                                    .preference(key: RenderedSectionIDsPreferenceKey.self, value: [sectionID])
                             } else {
                                 SystemMessageView(message: message)
                                     .id(message.id)
+                                    .preference(key: RenderedSectionIDsPreferenceKey.self, value: [sectionID])
                             }
                         }
                     }
@@ -522,6 +597,9 @@ struct ChatMessageListView: View {
                 scrollToBottom(proxy, animated: false)
             }
             .onChange(of: conversation?.id) { _, _ in
+                // Re-derive the visible window from the new conversation's
+                // length on the next render (last `initialVisibleCount`).
+                firstShownIndex = nil
                 scrollToBottom(proxy, animated: false)
             }
             .onChange(of: conversation?.messages.count ?? 0) { _, _ in
@@ -561,6 +639,7 @@ struct ChatMessageListView: View {
     }
 
     private static let bottomAnchorID = "chat-bottom"
+    private static let topAnchorID = "chat-load-more"
 
     /// Tracks the last message's rendered length so streaming updates
     /// (which don't change `messages.count`) still re-pin the bottom.
