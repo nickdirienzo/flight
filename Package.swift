@@ -7,6 +7,7 @@ let package = Package(
     platforms: [.macOS(.v15)],
     dependencies: [
         .package(url: "https://github.com/gonzalezreal/textual", from: "0.3.1"),
+        .package(url: "https://github.com/getsentry/sentry-cocoa", from: "9.11.0"),
     ],
     targets: [
         .target(
@@ -29,7 +30,10 @@ let package = Package(
         ),
         .executableTarget(
             name: "Flight",
-            dependencies: ["FlightApp"],
+            dependencies: [
+                "FlightApp",
+                .product(name: "Sentry", package: "sentry-cocoa"),
+            ],
             path: "Sources/FlightExecutable",
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
