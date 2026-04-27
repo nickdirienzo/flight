@@ -1553,7 +1553,7 @@ struct PlanItem {
                         || next.hasPrefix("- ") || next.hasPrefix("* ") || next.hasPrefix("```") {
                         break
                     }
-                    text += " " + next
+                    text += "\n" + next
                     i += 1
                 }
                 items.append(PlanItem(label: numLabel, text: text))
@@ -1571,7 +1571,7 @@ struct PlanItem {
                         || next.hasPrefix("```") {
                         break
                     }
-                    text += " " + next
+                    text += "\n" + next
                     i += 1
                 }
                 items.append(PlanItem(label: "\u{2022}", text: text))
@@ -1589,7 +1589,7 @@ struct PlanItem {
                         || next.hasPrefix("```") {
                         break
                     }
-                    text += " " + next
+                    text += "\n" + next
                     i += 1
                 }
                 items.append(PlanItem(label: "\u{00B6}", text: text))
