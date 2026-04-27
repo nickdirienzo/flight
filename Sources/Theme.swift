@@ -39,8 +39,12 @@ struct Base16Scheme: Codable {
     func toThemeColors() -> ThemeColors {
         let bg = Color(hex: base00)
         let bgLight = Color(hex: base01)
-        let fg = Color(hex: base05)
-        let fgDim = Color(hex: base04)
+        // base05 / base04 are foreground roles. Some themes pick neon-saturated
+        // hex values (e.g. Cyberpunk Umbra's #00ff9c), which makes prose painful
+        // to read when applied as body text. Clamp chroma so accents stay vivid
+        // but the foreground reads as a desaturated tint.
+        let fg = Self.readableForeground(hex: base05)
+        let fgDim = Self.readableForeground(hex: base04)
         let blue = Color(hex: base0D)
         let border = Color(hex: base03)
 
@@ -84,6 +88,67 @@ struct Base16Scheme: Codable {
             Double((val >> 8) & 0xFF) / 255.0,
             Double(val & 0xFF) / 255.0
         )
+    }
+
+    /// Cap HSL chroma (saturation × 2 × min(L, 1−L)) to `maxChroma`. Leaves
+    /// already-muted foregrounds untouched (every built-in scheme's base05
+    /// sits below 0.25), and pulls neon hexes toward a readable tint while
+    /// preserving hue and lightness.
+    static func readableForeground(hex: String, maxChroma: Double = 0.25) -> Color {
+        let clean = hex.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+        guard clean.count == 6, let val = UInt64(clean, radix: 16) else {
+            return Color(hex: hex)
+        }
+        let r = Double((val >> 16) & 0xFF) / 255.0
+        let g = Double((val >> 8) & 0xFF) / 255.0
+        let b = Double(val & 0xFF) / 255.0
+
+        let cMax = Swift.max(r, g, b)
+        let cMin = Swift.min(r, g, b)
+        let l = (cMax + cMin) / 2
+        let d = cMax - cMin
+        guard d > 0 else { return Color(red: r, green: g, blue: b) }
+
+        let s = l < 0.5 ? d / (cMax + cMin) : d / (2 - cMax - cMin)
+        let chroma = s * 2 * Swift.min(l, 1 - l)
+        if chroma <= maxChroma { return Color(red: r, green: g, blue: b) }
+
+        var h: Double
+        if cMax == r {
+            h = ((g - b) / d).truncatingRemainder(dividingBy: 6)
+        } else if cMax == g {
+            h = (b - r) / d + 2
+        } else {
+            h = (r - g) / d + 4
+        }
+        h /= 6
+        if h < 0 { h += 1 }
+
+        let denom = 2 * Swift.min(l, 1 - l)
+        let newS = denom > 0 ? maxChroma / denom : 0
+        let (nr, ng, nb) = Self.hslToRGB(h: h, s: newS, l: l)
+        return Color(red: nr, green: ng, blue: nb)
+    }
+
+    private static func hslToRGB(h: Double, s: Double, l: Double) -> (Double, Double, Double) {
+        if s == 0 { return (l, l, l) }
+        let q = l < 0.5 ? l * (1 + s) : l + s - l * s
+        let p = 2 * l - q
+        return (
+            hueToRGB(p: p, q: q, t: h + 1.0 / 3.0),
+            hueToRGB(p: p, q: q, t: h),
+            hueToRGB(p: p, q: q, t: h - 1.0 / 3.0)
+        )
+    }
+
+    private static func hueToRGB(p: Double, q: Double, t: Double) -> Double {
+        var t = t
+        if t < 0 { t += 1 }
+        if t > 1 { t -= 1 }
+        if t < 1.0 / 6.0 { return p + (q - p) * 6 * t }
+        if t < 1.0 / 2.0 { return q }
+        if t < 2.0 / 3.0 { return p + (q - p) * (2.0 / 3.0 - t) * 6 }
+        return p
     }
 
     // Built-in schemes
