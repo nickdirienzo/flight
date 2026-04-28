@@ -47,7 +47,7 @@ Add these repository variables:
 | Variable | Purpose |
 |---|---|
 | `SPARKLE_PUBLIC_ED_KEY` | Public EdDSA key from Sparkle's `generate_keys` tool. |
-| `FLIGHT_BUNDLE_ID` | Optional bundle identifier override. Defaults to `com.flight.app`. |
+| `FLIGHT_BUNDLE_ID` | Optional bundle identifier override. Defaults to `ai.miragesecurity.flight`. |
 | `SPARKLE_FEED_URL` | Optional appcast URL override. Defaults to the latest GitHub Release `appcast.xml` asset. |
 
 To generate the Sparkle key pair locally:

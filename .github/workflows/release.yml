@@ -123,7 +123,7 @@ jobs:
         run: |
           version="${{ steps.version.outputs.version }}"
           feed_url="${SPARKLE_FEED_URL:-https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/appcast.xml}"
-          bundle_id="${FLIGHT_BUNDLE_ID:-com.flight.app}"
+          bundle_id="${FLIGHT_BUNDLE_ID:-ai.miragesecurity.flight}"
 
           FLIGHT_VERSION="$version" \
             FLIGHT_BUILD_NUMBER="$GITHUB_RUN_NUMBER" \
