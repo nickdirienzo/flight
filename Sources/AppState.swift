@@ -987,15 +987,28 @@ public final class AppState {
             if remoteMsgs.count > handoff {
                 let newMsgs = Array(remoteMsgs[handoff...])
 
-                appendFlightEvent(
-                    .systemNote("Synced \(newMsgs.count) message\(newMsgs.count == 1 ? "" : "s") from remote session"),
-                    to: conversation
-                )
-                for msg in newMsgs {
-                    appendFlightEvent(
-                        .remoteMessage(role: msg.role, content: .text(msg.text)),
-                        to: conversation
-                    )
+                // Catching up via per-event appendFlightEvent rebuilt
+                // ChatSection from scratch on each iteration, turning a
+                // sync of N messages on a conversation of size M into
+                // O(N×M) main-thread work. Persist each event to the log
+                // (preserves on-disk ordering) but coalesce the in-memory
+                // updates into a single appendMessages call so SwiftUI
+                // sees one transaction.
+                let events: [FlightEvent] = [
+                    .systemNote("Synced \(newMsgs.count) message\(newMsgs.count == 1 ? "" : "s") from remote session")
+                ] + newMsgs.map {
+                    .remoteMessage(role: $0.role, content: .text($0.text))
+                }
+                var batchMessages: [AgentMessage] = []
+                batchMessages.reserveCapacity(events.count)
+                for event in events {
+                    FlightEventLog.append(event, conversationID: conversation.id)
+                    if let msg = event.toAgentMessage() {
+                        batchMessages.append(msg)
+                    }
+                }
+                if !batchMessages.isEmpty {
+                    conversation.appendMessages(batchMessages)
                 }
             }
         } catch {
