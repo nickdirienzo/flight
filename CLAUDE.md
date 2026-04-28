@@ -27,3 +27,5 @@ assume 120Hz ProMotion (8.3ms frame budget).
 | Heavy conversation avg (2000 msgs, 50KB tools) | < 6.0 ms | Same, average case |
 | `visibleSections` slice (500-section conv) | < 0.5 ms | Runs every `ChatMessageListView.body` evaluation — streaming fires this per token, so even 0.5ms × 60fps = 30ms/s overhead is too much if it regresses |
 | Section ID enumeration (150 visible secs) | < 0.5 ms | Simulates `ForEach.IDGenerator.makeID` calling `section.id` per item per layout pass — the `initializeWithCopy for ChatSection` hot path from the cpu_resource.diag hang |
+| Remote sync catchup (50 msgs onto 1000) | < 8.0 ms | `AppState.syncRemoteSession` once iterated per-message and rebuilt sections each time — N caught-up msgs onto an M-section conv was O(N×M). Batched append is one rebuild; this target catches a regression to the per-iteration shape. |
+| Streaming burst (100 × 1-event batches onto 1000 secs) | < 1000 ms | Worst-case `ClaudeAgent.startReading` chunking, where TCP delivers one event per `availableData` read. If sustained streaming costs more than this, a single core saturates on `ChatSection.build` alone. |

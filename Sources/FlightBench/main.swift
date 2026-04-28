@@ -157,6 +157,18 @@ var targets: [PerfTarget] = [
     // cpu_resource.diag crash trace).
     PerfTarget(name: "visibleSections slice (500-sec conv)", limit: 0.5, unit: "ms"),
     PerfTarget(name: "section ID enumeration (150 secs)", limit: 0.5, unit: "ms"),
+    // Remote sync catchup: bursting N messages onto an existing M-section
+    // conversation must be O(M+N), not O(N×M). The hang we caught had
+    // syncRemoteSession iterating per-message and rebuilding sections each
+    // iteration — 50 caught-up msgs onto a 1000-section conv was ~250ms of
+    // main-thread CPU. Batched append is one rebuild.
+    PerfTarget(name: "remote sync 50 msgs onto 1000", limit: 8.0, unit: "ms"),
+    // Streaming burst: a long conversation receiving rapid stdout chunks
+    // from claude. Each chunk drains via @Observable and triggers a full
+    // ChatSection.build. Target = total build cost for 100 events delivered
+    // as 100 batches of 1 onto a 1000-section conversation. If this exceeds
+    // ~1s the main thread saturates under sustained streaming.
+    PerfTarget(name: "streaming burst 100×1 onto 1000", limit: 1000.0, unit: "ms"),
 ]
 
 // MARK: - Benchmarks (with eval capture)
@@ -399,6 +411,98 @@ func benchmarkPaginationEval() -> (sliceAvg: Double, idEnumAvg: Double) {
     return (sliceAvg, idAvg)
 }
 
+// MARK: - Benchmark 7: Remote-sync catchup
+
+/// Mirrors AppState.syncRemoteSession: a remote session catches up by
+/// merging N new messages into a conversation of size M. The pattern that
+/// caused the hang was `for msg in newMsgs { conversation.appendMessage(msg) }`,
+/// which rebuilt sections from scratch on every iteration — O(N×M).
+///
+/// The fix collects events first and calls `appendMessages` once. This bench
+/// exercises both shapes so a regression to per-iteration appending shows up
+/// as a giant gap between the two numbers.
+func benchmarkRemoteSyncCatchupEval() -> Double {
+    print("=" * 60)
+    print("Benchmark 7: Remote-sync catchup (1000 base + 50 caught-up)")
+    print("=" * 60)
+    print("")
+
+    let baseMessages = generateConversation(count: 1000)
+    let newMessages = generateConversation(count: 50)
+
+    // (a) Per-message append (the broken pattern). Each iteration rebuilds
+    // sections over the entire growing message list.
+    let timePerMessage = measure {
+        var messages = baseMessages
+        for msg in newMessages {
+            messages.append(msg)
+            _ = ChatSection.build(from: messages)
+        }
+    }
+
+    // (b) Batched append (the fix). One rebuild for the whole batch.
+    let timeBatched = measure {
+        var messages = baseMessages
+        messages.append(contentsOf: newMessages)
+        _ = ChatSection.build(from: messages)
+    }
+
+    print(String(format: "%-30@  %10@", "Strategy" as NSString, "Time (ms)" as NSString))
+    print("-" * 43)
+    print(String(format: "%-30@  %10.3f", "Per-message (regression)" as NSString, timePerMessage))
+    print(String(format: "%-30@  %10.3f", "Batched (fix)" as NSString, timeBatched))
+    print(String(format: "%-30@  %10.1fx", "Speedup (batched vs. per-msg)" as NSString, timePerMessage / timeBatched))
+    print("")
+    return timeBatched
+}
+
+// MARK: - Benchmark 8: Streaming burst
+
+/// Simulates ClaudeAgent.startReading delivering K events in B batches onto
+/// a long conversation. Worst case is B=K (one event per `availableData`
+/// read — what TCP often does when network jitter splits a writer's burst).
+/// Each batch triggers a full ChatSection.build.
+///
+/// The headline number is total build cost for 100 events delivered as 100
+/// batches of 1 onto a 1000-section base. If this exceeds ~1s, sustained
+/// streaming pegs a core just doing section rebuilds, which is what the
+/// hang stackshots showed.
+func benchmarkStreamingBurstEval() -> Double {
+    print("=" * 60)
+    print("Benchmark 8: Streaming burst (1000 base + 100 events at varying batch sizes)")
+    print("=" * 60)
+    print("")
+    print(String(format: "%-20@  %10@  %10@  %12@",
+        "Batch shape" as NSString, "Batches" as NSString,
+        "Total (ms)" as NSString, "Per-event (ms)" as NSString))
+    print("-" * 58)
+
+    let baseMessages = generateConversation(count: 1000)
+    let totalEvents = 100
+
+    var worstCaseTotal: Double = 0
+
+    for batchSize in [1, 5, 25] {
+        let batches = stride(from: 0, to: totalEvents, by: batchSize).map { start -> [AgentMessage] in
+            let end = min(start + batchSize, totalEvents)
+            return generateConversation(count: end - start)
+        }
+        let total = measure {
+            var messages = baseMessages
+            for batch in batches {
+                messages.append(contentsOf: batch)
+                _ = ChatSection.build(from: messages)
+            }
+        }
+        let perEvent = total / Double(totalEvents)
+        print(String(format: "batches of %-8d  %10d  %10.3f  %12.4f",
+            batchSize, batches.count, total, perEvent))
+        if batchSize == 1 { worstCaseTotal = total }
+    }
+    print("")
+    return worstCaseTotal
+}
+
 // MARK: - Main
 
 print("")
@@ -411,6 +515,8 @@ let rssDeltaMB = benchmarkMemoryEval()
 let (avgLarge, p99Large) = benchmarkLargePayloadsEval()
 let (avgHeavy, p99Heavy) = benchmarkHeavyConversationEval()
 let (sliceAvg, idEnumAvg) = benchmarkPaginationEval()
+let remoteSyncBatched = benchmarkRemoteSyncCatchupEval()
+let streamingWorstCase = benchmarkStreamingBurstEval()
 
 // Fill in actuals
 targets[0].actual = p99_2k
@@ -423,6 +529,8 @@ targets[6].actual = p99Heavy
 targets[7].actual = avgHeavy
 targets[8].actual = sliceAvg
 targets[9].actual = idEnumAvg
+targets[10].actual = remoteSyncBatched
+targets[11].actual = streamingWorstCase
 
 // MARK: - Eval Report
 

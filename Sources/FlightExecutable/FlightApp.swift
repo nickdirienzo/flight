@@ -21,6 +21,22 @@ struct Flight: App {
         SentrySDK.start { options in
             options.dsn = "https://eaaab6f9b42c992322250844c6ee6c8f@o4506119898923008.ingest.us.sentry.io/4511293130211328"
             options.sendDefaultPii = true
+
+            // Hang reports landed in os_diag but never made it to Sentry on
+            // a force-quit. Be explicit about hang tracking so default drift
+            // across SDK versions doesn't silently turn it off, and bump the
+            // threshold to 5s so we catch the real hangs (>30s in stackshots)
+            // without spamming on transient main-thread blocks.
+            options.enableAppHangTracking = true
+            options.appHangTimeoutInterval = 5
+
+            // Tag events with version so a single noisy build is filterable
+            // in Sentry's UI; without this every event coalesces into one
+            // unversioned bucket.
+            let info = Bundle.main.infoDictionary
+            let short = info?["CFBundleShortVersionString"] as? String ?? "unknown"
+            let build = info?["CFBundleVersion"] as? String ?? "0"
+            options.releaseName = "ai.miragesecurity.flight@\(short)+\(build)"
         }
         SentryService.subprocessFailureHandler = { command, exitCode, correlationID in
             SentrySDK.capture(message: "Subprocess '\(command)' exited \(exitCode)") { scope in
