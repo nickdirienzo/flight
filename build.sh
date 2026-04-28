@@ -105,6 +105,7 @@ if [ -n "$SPARKLE_FEED_URL" ] && [ -n "$SPARKLE_PUBLIC_ED_KEY" ]; then
     /usr/libexec/PlistBuddy -c "Add :SUFeedURL string $SPARKLE_FEED_URL" "$INFO_PLIST"
     /usr/libexec/PlistBuddy -c "Add :SUPublicEDKey string $SPARKLE_PUBLIC_ED_KEY" "$INFO_PLIST"
     /usr/libexec/PlistBuddy -c "Add :SUEnableAutomaticChecks bool true" "$INFO_PLIST"
+    /usr/libexec/PlistBuddy -c "Add :SUScheduledCheckInterval real 3600" "$INFO_PLIST"
     /usr/libexec/PlistBuddy -c "Add :SUAllowsAutomaticUpdates bool true" "$INFO_PLIST"
     /usr/libexec/PlistBuddy -c "Add :SUAutomaticallyUpdate bool true" "$INFO_PLIST"
 else
