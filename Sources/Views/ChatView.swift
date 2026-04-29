@@ -130,7 +130,7 @@ struct ChatView: View {
             Circle()
                 .fill(statusColor)
                 .frame(width: 8, height: 8)
-            Text(worktree.branch)
+            Text(worktree.sidebarLabel)
                 .font(.headline)
                 .lineLimit(1)
             if worktree.isRemote && worktree.workspaceName != nil {
@@ -293,9 +293,9 @@ struct ChatView: View {
     }
 
     private func defaultExportFilename(for conv: Conversation) -> String {
-        let safeBranch = worktree.branch.replacingOccurrences(of: "/", with: "-")
+        let safeLabel = worktree.sidebarLabel.replacingOccurrences(of: "/", with: "-")
         let safeName = conv.name.replacingOccurrences(of: "/", with: "-")
-        return "\(safeBranch)-\(safeName).jsonl"
+        return "\(safeLabel)-\(safeName).jsonl"
     }
 
     // MARK: - Search

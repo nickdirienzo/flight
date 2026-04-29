@@ -3,6 +3,7 @@ import SwiftUI
 struct SidebarView: View {
     @Bindable var state: AppState
     @Environment(\.theme) private var theme
+    @State private var renamingWorktreeID: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -24,6 +25,7 @@ struct SidebarView: View {
                         .padding(.top, 4)
                         .contentShape(Rectangle())
                         .onTapGesture {
+                            commitRenameIfNeeded()
                             state.selectedProjectID = project.id
                         }
                         .contextMenu {
@@ -34,9 +36,19 @@ struct SidebarView: View {
 
                         // Worktrees
                         ForEach(project.worktrees) { worktree in
-                            WorktreeRow(worktree: worktree, isSelected: worktree.id == state.selectedWorktreeID)
+                            WorktreeRow(
+                                worktree: worktree,
+                                isSelected: worktree.id == state.selectedWorktreeID,
+                                isRenaming: renamingWorktreeID == worktree.id,
+                                onRenameCommit: {
+                                    renamingWorktreeID = nil
+                                    state.saveConfig()
+                                }
+                            )
                                 .contentShape(Rectangle())
                                 .onTapGesture {
+                                    if renamingWorktreeID == worktree.id { return }
+                                    commitRenameIfNeeded()
                                     state.selectedWorktreeID = worktree.id
                                     state.selectedProjectID = project.id
                                     if worktree.prNumber != nil {
@@ -50,6 +62,10 @@ struct SidebarView: View {
                     }
                 }
                 .padding(.vertical, 4)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                commitRenameIfNeeded()
             }
 
             Divider()
@@ -135,6 +151,9 @@ struct SidebarView: View {
             }
         }
         Divider()
+        Button("Rename") {
+            renamingWorktreeID = worktree.id
+        }
         Button("New Tab") {
             state.addConversation(to: worktree)
         }
@@ -143,12 +162,22 @@ struct SidebarView: View {
             Task { await state.removeWorktree(worktree) }
         }
     }
+
+    private func commitRenameIfNeeded() {
+        guard renamingWorktreeID != nil else { return }
+        renamingWorktreeID = nil
+        state.saveConfig()
+    }
 }
 
 struct WorktreeRow: View {
-    let worktree: Worktree
+    @Bindable var worktree: Worktree
     var isSelected: Bool = false
+    var isRenaming: Bool = false
+    var onRenameCommit: () -> Void = {}
     @Environment(\.theme) private var theme
+    @State private var editText: String = ""
+    @FocusState private var fieldFocused: Bool
 
     var body: some View {
         HStack(spacing: 6) {
@@ -158,10 +187,27 @@ struct WorktreeRow: View {
                     .foregroundStyle(theme.secondaryText)
             }
 
-            Text(worktree.branch)
-                .font(.system(size: 13))
-                .foregroundStyle(isSelected ? .white : theme.text)
-                .lineLimit(1)
+            if isRenaming {
+                TextField("Workspace name", text: $editText)
+                    .font(.system(size: 13))
+                    .textFieldStyle(.roundedBorder)
+                    .focused($fieldFocused)
+                    .onSubmit { commitRename() }
+                    .onExitCommand { commitRename() }
+                    .onChange(of: editText) { _, newValue in
+                        let trimmed = newValue.trimmingCharacters(in: .whitespaces)
+                        worktree.displayName = trimmed.isEmpty ? nil : trimmed
+                    }
+                    .onAppear {
+                        editText = worktree.sidebarLabel
+                        fieldFocused = true
+                    }
+            } else {
+                Text(worktree.sidebarLabel)
+                    .font(.system(size: 13))
+                    .foregroundStyle(isSelected ? .white : theme.text)
+                    .lineLimit(1)
+            }
 
             Spacer()
 
@@ -181,6 +227,10 @@ struct WorktreeRow: View {
                 : RoundedRectangle(cornerRadius: 6).fill(Color.clear)
         )
         .padding(.horizontal, 4)
+    }
+
+    private func commitRename() {
+        onRenameCommit()
     }
 
     private var statusLabel: String {

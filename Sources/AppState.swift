@@ -640,6 +640,10 @@ public final class AppState {
         }()
         let effort = conversation.effort?.rawValue
 
+        if worktree.displayName == nil {
+            Task { await generateDisplayName(from: text, for: worktree) }
+        }
+
         // Worktree still provisioning: queue the message. startAgent during
         // this window would spawn a *local* claude (remote workspaceName is
         // nil, so the connect wrapper can't resolve) and run it against a
@@ -1065,7 +1069,43 @@ public final class AppState {
         projectFor(worktree: worktree)
     }
 
-    private func saveConfig() {
+    private func generateDisplayName(from message: String, for worktree: Worktree) async {
+        let truncated = String(message.prefix(500))
+        let prompt = "Generate a concise 2-4 word workspace title for this task. Reply with ONLY the title, no quotes or punctuation. Example: 'Sidebar Rename Feature'. Task: \(truncated)"
+
+        let name: String? = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .utility).async {
+                let proc = Process()
+                let stdout = Pipe()
+                proc.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+                proc.arguments = [
+                    "claude", "-p", prompt,
+                    "--model", "claude-haiku-4-5-20251001",
+                    "--max-turns", "1",
+                ]
+                proc.standardOutput = stdout
+                proc.standardError = FileHandle.nullDevice
+
+                do {
+                    try proc.run()
+                    proc.waitUntilExit()
+                    let data = stdout.fileHandleForReading.readDataToEndOfFile()
+                    let result = String(data: data, encoding: .utf8)?
+                        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    continuation.resume(returning: proc.terminationStatus == 0 && !result.isEmpty ? result : nil)
+                } catch {
+                    continuation.resume(returning: nil)
+                }
+            }
+        }
+
+        if let name {
+            worktree.displayName = name
+            saveConfig()
+        }
+    }
+
+    func saveConfig() {
         let config = FlightConfig(
             projects: projects.map { ProjectConfig(from: $0) }
         )
