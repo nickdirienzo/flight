@@ -15,6 +15,7 @@ final class Worktree: Identifiable {
     var branch: String
     var path: String
     var status: WorktreeStatus
+    var displayName: String?
     var conversations: [Conversation]
     var activeConversationID: UUID?
     var prNumber: Int?
@@ -52,10 +53,15 @@ final class Worktree: Identifiable {
         conversations.contains { $0.agent?.isRunning == true }
     }
 
+    var sidebarLabel: String {
+        displayName ?? branch
+    }
+
     init(
         branch: String,
         path: String,
         status: WorktreeStatus = .idle,
+        displayName: String? = nil,
         prNumber: Int? = nil,
         isRemote: Bool = false,
         workspaceName: String? = nil
@@ -63,6 +69,7 @@ final class Worktree: Identifiable {
         self.branch = branch
         self.path = path
         self.status = status
+        self.displayName = displayName
         self.conversations = []
         self.prNumber = prNumber
         self.isRemote = isRemote
@@ -86,6 +93,7 @@ final class Worktree: Identifiable {
 struct WorktreeConfig: Codable {
     let branch: String
     let path: String
+    var displayName: String?
     var prNumber: Int?
     var isRemote: Bool?
     var workspaceName: String?
@@ -98,6 +106,7 @@ struct WorktreeConfig: Codable {
     init(from worktree: Worktree) {
         self.branch = worktree.branch
         self.path = worktree.path
+        self.displayName = worktree.displayName
         self.prNumber = worktree.prNumber
         self.isRemote = worktree.isRemote
         self.workspaceName = worktree.workspaceName
@@ -111,6 +120,7 @@ struct WorktreeConfig: Codable {
     func toWorktree() -> Worktree {
         let wt = Worktree(
             branch: branch, path: path,
+            displayName: displayName,
             prNumber: prNumber,
             isRemote: isRemote ?? false, workspaceName: workspaceName
         )
