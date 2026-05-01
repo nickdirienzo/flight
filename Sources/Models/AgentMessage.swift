@@ -11,11 +11,14 @@ struct StreamEvent: Decodable {
     let sessionID: String?
     let requestID: String?
     let request: ControlRequest?
+    let isError: Bool?
+    let errors: [String]?
 
     enum CodingKeys: String, CodingKey {
-        case type, subtype, message, result, request
+        case type, subtype, message, result, request, errors
         case sessionID = "session_id"
         case requestID = "request_id"
+        case isError = "is_error"
     }
 
     struct ControlRequest: Decodable {
@@ -99,6 +102,20 @@ struct AnyCodable: Decodable {
 
 extension StreamEvent {
     func toAgentMessages() -> [AgentMessage] {
+        // Surface error results so the user sees something instead of a
+        // silent stop. The most common case is `claude -p --resume <sid>`
+        // against a wiped jsonl (Coder workspace restart wipes
+        // ~/.claude/projects/, but Flight still holds the pre-restart SID).
+        // Without this branch the result event is dropped, the spinner
+        // ends, and the chat goes mute — Ross's "hmm nada" repro.
+        if type == "result", isError == true {
+            let cleanErrors = (errors ?? []).filter { !$0.isEmpty }
+            let body = cleanErrors.isEmpty
+                ? "Claude returned an error and the turn could not complete."
+                : "Claude error: " + cleanErrors.joined(separator: "; ")
+            return [AgentMessage(role: .system, content: .text(body))]
+        }
+
         // Skip non-chat events
         if type == "system" || type == "rate_limit_event" || type == "result" { return [] }
 
