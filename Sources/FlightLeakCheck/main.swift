@@ -11,7 +11,7 @@ import Foundation
 /// reparenting) adds enough timing noise that an FD-counting test inside
 /// `swift test` is flaky. A plain `swift run` binary spawns subprocesses
 /// the same way Flight does in production and lets us count FDs without
-/// the harness in the way.
+/// the harness in the way. `./test.sh` runs this after `swift test`.
 
 func openFDCount() -> Int {
     (try? FileManager.default.contentsOfDirectory(atPath: "/dev/fd").count) ?? 0

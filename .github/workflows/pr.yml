@@ -28,10 +28,7 @@ jobs:
         run: swift build --target FlightBench
 
       - name: Run tests
-        run: swift test
-
-      - name: Subprocess FD leak check
-        run: Scripts/leak-check.sh
+        run: ./test.sh
 
       - name: Run benchmarks
         continue-on-error: true
